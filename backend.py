@@ -24,8 +24,8 @@ app.add_middleware(
 )
 
 # Supabase configuration
-SUPABASE_URL = "https://your-project.supabase.co"  # Replace with your Supabase URL
-SUPABASE_KEY = "your-anon-key"  # Replace with your Supabase anon key
+SUPABASE_URL = "https://tinuhgygmhlnyugbinsm.supabase.co"  # Replace with your Supabase URL
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnVoZ3lnbWhsbnl1Z2JpbnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NzEzMjksImV4cCI6MjA3OTE0NzMyOX0.4y9pP8Auompl-7_vWjI3RrI2Opv8M7cduUyn1WiryVo"  # Replace with your Supabase anon key
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
