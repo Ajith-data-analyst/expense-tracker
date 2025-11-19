@@ -10,7 +10,7 @@ import json
 import io
 
 # Configuration
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = "https://expense-tracker-n6e8.onrender.com"
 
 class EnhancedExpenseTracker:
     def __init__(self, backend_url):
