@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: expense-tracker-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PORT
+        value: 8000
+
+  - type: web
+    name: expense-tracker-frontend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run frontend.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PORT
+        value: 8501
+      - key: BACKEND_URL
+        fromService:
+          name: expense-tracker-backend
+          type: web
+          property: url
