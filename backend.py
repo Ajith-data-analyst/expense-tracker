@@ -5,8 +5,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import uuid
 import os
-from enum import Enum
 import json
+import random
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
@@ -25,23 +25,6 @@ app.add_middleware(
 
 # Data storage file (using JSON file for simplicity on Render)
 DATA_FILE = "expenses_data.json"
-
-class ExpenseCategory(str, Enum):
-    FOOD = "Food & Dining"
-    TRANSPORT = "Transportation"
-    ENTERTAINMENT = "Entertainment"
-    UTILITIES = "Utilities"
-    SHOPPING = "Shopping"
-    HEALTHCARE = "Healthcare"
-    TRAVEL = "Travel"
-    EDUCATION = "Education"
-    HOUSING = "Housing"
-    OTHER = "Other"
-
-class ExpensePriority(str, Enum):
-    LOW = "Low"
-    MEDIUM = "Medium"
-    HIGH = "High"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -196,7 +179,6 @@ def generate_sample_data():
                 expense_count += 1
         
         # Daily food expenses (skip some days)
-        import random
         if random.random() > 0.1:  # 90% days have food expenses
             food_count = random.randint(2, 4)
             for _ in range(food_count):
