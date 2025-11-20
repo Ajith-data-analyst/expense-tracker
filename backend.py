@@ -1,10 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import uuid
-import os
 from enum import Enum
 from supabase import create_client, Client
 import random
@@ -28,8 +27,14 @@ app.add_middleware(
 SUPABASE_URL = "https://tinuhgygmhlnyugbinsm.supabase.co"  # Replace with your Supabase URL
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnVoZ3lnbWhsbnl1Z2JpbnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NzEzMjksImV4cCI6MjA3OTE0NzMyOX0.4y9pP8Auompl-7_vWjI3RrI2Opv8M7cduUyn1WiryVo"  # Replace with your Supabase anon key
 
+
 # Initialize Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("✅ Supabase client initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize Supabase client: {e}")
+    supabase = None
 
 class ExpenseCategory(str, Enum):
     FOOD = "Food & Dining"
@@ -51,25 +56,11 @@ class ExpensePriority(str, Enum):
 class ExpenseBase(BaseModel):
     description: str
     amount: float
-    category: ExpenseCategory
+    category: str
     date: str
-    priority: ExpensePriority = ExpensePriority.MEDIUM
+    priority: str = "Medium"
     tags: List[str] = []
     notes: Optional[str] = None
-
-    @validator('amount')
-    def amount_must_be_positive(cls, v):
-        if v <= 0:
-            raise ValueError('Amount must be positive')
-        return v
-
-    @validator('date')
-    def validate_date(cls, v):
-        try:
-            datetime.fromisoformat(v)
-            return v
-        except ValueError:
-            raise ValueError('Invalid date format. Use YYYY-MM-DD')
 
 class ExpenseCreate(ExpenseBase):
     pass
@@ -82,9 +73,9 @@ class Expense(ExpenseBase):
 class ExpenseUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[float] = None
-    category: Optional[ExpenseCategory] = None
+    category: Optional[str] = None
     date: Optional[str] = None
-    priority: Optional[ExpensePriority] = None
+    priority: Optional[str] = None
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
 
@@ -110,6 +101,8 @@ class BudgetAlert(BaseModel):
 def get_expenses():
     """Get all expenses from Supabase"""
     try:
+        if not supabase:
+            return []
         response = supabase.table("expenses").select("*").order("date", desc=True).execute()
         return response.data
     except Exception as e:
@@ -119,6 +112,8 @@ def get_expenses():
 def save_expense(expense_data):
     """Save expense to Supabase"""
     try:
+        if not supabase:
+            raise Exception("Supabase client not initialized")
         response = supabase.table("expenses").insert(expense_data).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -128,6 +123,8 @@ def save_expense(expense_data):
 def update_expense_db(expense_id, update_data):
     """Update expense in Supabase"""
     try:
+        if not supabase:
+            raise Exception("Supabase client not initialized")
         response = supabase.table("expenses").update(update_data).eq("id", expense_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -137,6 +134,8 @@ def update_expense_db(expense_id, update_data):
 def delete_expense_db(expense_id):
     """Delete expense from Supabase"""
     try:
+        if not supabase:
+            raise Exception("Supabase client not initialized")
         response = supabase.table("expenses").delete().eq("id", expense_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
@@ -146,17 +145,27 @@ def delete_expense_db(expense_id):
 def initialize_sample_data():
     """Initialize sample data for Chennai computer science student"""
     try:
+        if not supabase:
+            print("Supabase not initialized, skipping sample data")
+            return
+            
         existing_expenses = get_expenses()
-        if len(existing_expenses) > 10:  # If already has data, don't insert
+        if len(existing_expenses) > 5:  # If already has data, don't insert
+            print(f"Already have {len(existing_expenses)} expenses, skipping sample data")
             return
         
+        print("Initializing sample data...")
         sample_expenses = generate_sample_data()
+        
         for expense in sample_expenses:
-            expense["tags"] = ",".join(expense["tags"])
+            # Convert tags list to string for storage
+            if 'tags' in expense and isinstance(expense['tags'], list):
+                expense['tags'] = ','.join(expense['tags'])
             save_expense(expense)
-        print("Sample data initialized successfully")
+            
+        print(f"✅ Sample data initialized successfully with {len(sample_expenses)} expenses")
     except Exception as e:
-        print(f"Error initializing sample data: {e}")
+        print(f"❌ Error initializing sample data: {e}")
 
 def generate_sample_data():
     """Generate 3 months of sample expense data for Chennai CS student"""
@@ -202,6 +211,8 @@ def generate_sample_data():
     ]
     
     current_date = base_date
+    expense_count = 0
+    
     while current_date <= datetime.now():
         # Add monthly expenses on 1st of each month
         if current_date.day == 1:
@@ -209,15 +220,16 @@ def generate_sample_data():
                 sample_data.append({
                     "id": str(uuid.uuid4()),
                     "description": expense["desc"],
-                    "amount": expense["amount"],
+                    "amount": float(expense["amount"]),
                     "category": expense["category"],
-                    "date": current_date.isoformat(),
+                    "date": current_date.date().isoformat(),
                     "priority": "High",
                     "tags": expense["tags"],
                     "notes": "Monthly expense",
-                    "created_at": current_date.isoformat(),
-                    "updated_at": current_date.isoformat()
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
                 })
+                expense_count += 1
         
         # Daily food expenses (skip some days)
         if random.random() > 0.1:  # 90% days have food expenses
@@ -227,15 +239,16 @@ def generate_sample_data():
                 sample_data.append({
                     "id": str(uuid.uuid4()),
                     "description": food["desc"],
-                    "amount": food["amount"],
+                    "amount": float(food["amount"]),
                     "category": "Food & Dining",
-                    "date": current_date.isoformat(),
+                    "date": current_date.date().isoformat(),
                     "priority": "Medium",
                     "tags": food["tags"],
                     "notes": "Daily food expense",
-                    "created_at": current_date.isoformat(),
-                    "updated_at": current_date.isoformat()
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
                 })
+                expense_count += 1
         
         # Transportation (3-4 times per week)
         if random.random() > 0.4:
@@ -243,15 +256,16 @@ def generate_sample_data():
             sample_data.append({
                 "id": str(uuid.uuid4()),
                 "description": transport["desc"],
-                "amount": transport["amount"],
+                "amount": float(transport["amount"]),
                 "category": "Transportation",
-                "date": current_date.isoformat(),
+                "date": current_date.date().isoformat(),
                 "priority": "Medium",
                 "tags": transport["tags"],
                 "notes": "Transportation expense",
-                "created_at": current_date.isoformat(),
-                "updated_at": current_date.isoformat()
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
             })
+            expense_count += 1
         
         # Entertainment (once per week)
         if current_date.weekday() == 6 and random.random() > 0.3:  # Sundays
@@ -259,15 +273,16 @@ def generate_sample_data():
             sample_data.append({
                 "id": str(uuid.uuid4()),
                 "description": entertainment["desc"],
-                "amount": entertainment["amount"],
+                "amount": float(entertainment["amount"]),
                 "category": "Entertainment",
-                "date": current_date.isoformat(),
+                "date": current_date.date().isoformat(),
                 "priority": "Low",
                 "tags": entertainment["tags"],
                 "notes": "Weekend entertainment",
-                "created_at": current_date.isoformat(),
-                "updated_at": current_date.isoformat()
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
             })
+            expense_count += 1
         
         # Education expenses (occasionally)
         if random.random() > 0.8:
@@ -275,18 +290,20 @@ def generate_sample_data():
             sample_data.append({
                 "id": str(uuid.uuid4()),
                 "description": education["desc"],
-                "amount": education["amount"],
+                "amount": float(education["amount"]),
                 "category": "Education",
-                "date": current_date.isoformat(),
+                "date": current_date.date().isoformat(),
                 "priority": "High",
                 "tags": education["tags"],
                 "notes": "Educational expense",
-                "created_at": current_date.isoformat(),
-                "updated_at": current_date.isoformat()
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
             })
+            expense_count += 1
         
         current_date += timedelta(days=1)
     
+    print(f"Generated {expense_count} sample expenses")
     return sample_data
 
 @app.get("/")
@@ -296,12 +313,7 @@ def read_root():
         "version": "2.0.0",
         "database": "Supabase (Cloud)",
         "currency": "INR",
-        "endpoints": [
-            "/expenses/ - CRUD operations",
-            "/analytics/ - Comprehensive analytics",
-            "/budgets/ - Budget management",
-            "/reports/ - Financial reports"
-        ]
+        "status": "healthy"
     }
 
 @app.post("/expenses/", response_model=Expense)
@@ -314,12 +326,13 @@ def create_expense(expense: ExpenseCreate):
         expense_data["updated_at"] = datetime.now().isoformat()
         
         # Convert tags list to string for Supabase storage
-        expense_data["tags"] = ",".join(expense_data["tags"])
+        if 'tags' in expense_data and isinstance(expense_data['tags'], list):
+            expense_data["tags"] = ",".join(expense_data["tags"])
         
         saved_expense = save_expense(expense_data)
         if saved_expense:
             # Convert tags back to list for response
-            if isinstance(saved_expense["tags"], str):
+            if isinstance(saved_expense.get("tags"), str):
                 saved_expense["tags"] = saved_expense["tags"].split(",") if saved_expense["tags"] else []
             return saved_expense
         else:
@@ -329,12 +342,12 @@ def create_expense(expense: ExpenseCreate):
 
 @app.get("/expenses/", response_model=List[Expense])
 def read_expenses(
-    category: Optional[ExpenseCategory] = None,
+    category: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     min_amount: Optional[float] = None,
     max_amount: Optional[float] = None,
-    priority: Optional[ExpensePriority] = None,
+    priority: Optional[str] = None,
     tags: Optional[str] = None,
     skip: int = 0,
     limit: int = 1000
@@ -351,7 +364,7 @@ def read_expenses(
         filtered_expenses = expenses
         
         # Apply filters
-        if category:
+        if category and category != "All":
             filtered_expenses = [exp for exp in filtered_expenses if exp["category"] == category]
         
         if start_date:
@@ -366,7 +379,7 @@ def read_expenses(
         if max_amount is not None:
             filtered_expenses = [exp for exp in filtered_expenses if exp["amount"] <= max_amount]
         
-        if priority:
+        if priority and priority != "All":
             filtered_expenses = [exp for exp in filtered_expenses if exp["priority"] == priority]
         
         if tags:
@@ -376,7 +389,9 @@ def read_expenses(
                 if any(tag in [t.lower() for t in exp.get("tags", [])] for tag in tag_list)
             ]
         
-        return filtered_expenses[skip:skip + limit]
+        # Apply pagination
+        end_index = skip + limit
+        return filtered_expenses[skip:end_index]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -409,7 +424,7 @@ def update_expense(expense_id: str, expense_update: ExpenseUpdate):
         updated_expense = update_expense_db(expense_id, update_data)
         if updated_expense:
             # Convert tags back to list for response
-            if isinstance(updated_expense["tags"], str):
+            if isinstance(updated_expense.get("tags"), str):
                 updated_expense["tags"] = updated_expense["tags"].split(",") if updated_expense["tags"] else []
             return updated_expense
         else:
@@ -424,7 +439,7 @@ def delete_expense(expense_id: str):
         deleted_expense = delete_expense_db(expense_id)
         if deleted_expense:
             # Convert tags back to list for response
-            if isinstance(deleted_expense["tags"], str):
+            if isinstance(deleted_expense.get("tags"), str):
                 deleted_expense["tags"] = deleted_expense["tags"].split(",") if deleted_expense["tags"] else []
             return {"message": "Expense deleted successfully", "deleted_expense": deleted_expense}
         else:
@@ -432,7 +447,7 @@ def delete_expense(expense_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/analytics/overview", response_model=AnalyticsResponse)
+@app.get("/analytics/overview")
 def get_analytics_overview(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
@@ -459,94 +474,119 @@ def get_analytics_overview(
                 daily_pattern={},
                 spending_velocity={},
                 savings_rate=0
-            )
+            ).dict()
         
         # Basic calculations
-        total_spent = sum(exp["amount"] for exp in expenses)
+        total_spent = sum(float(exp["amount"]) for exp in expenses)
         
         # Date range for average daily
-        dates = [datetime.fromisoformat(exp["date"]) for exp in expenses]
-        min_date = min(dates)
-        max_date = max(dates)
-        days = (max_date - min_date).days + 1
-        average_daily = total_spent / days if days > 0 else total_spent
+        try:
+            dates = [datetime.fromisoformat(exp["date"]) for exp in expenses]
+            min_date = min(dates)
+            max_date = max(dates)
+            days = (max_date - min_date).days + 1
+            average_daily = total_spent / days if days > 0 else total_spent
+        except:
+            average_daily = total_spent / 30  # Fallback
         
         # Category breakdown
         category_breakdown = {}
         for exp in expenses:
             category = exp["category"]
-            category_breakdown[category] = category_breakdown.get(category, 0) + exp["amount"]
+            category_breakdown[category] = category_breakdown.get(category, 0) + float(exp["amount"])
         
         # Monthly trend
         monthly_data = {}
         for exp in expenses:
-            date = datetime.fromisoformat(exp["date"])
-            month_key = date.strftime("%Y-%m")
-            monthly_data[month_key] = monthly_data.get(month_key, 0) + exp["amount"]
+            try:
+                date = datetime.fromisoformat(exp["date"])
+                month_key = date.strftime("%Y-%m")
+                monthly_data[month_key] = monthly_data.get(month_key, 0) + float(exp["amount"])
+            except:
+                continue
         
         monthly_trend = [{"month": month, "amount": amount} for month, amount in monthly_data.items()]
         
         # Weekly spending (last 8 weeks)
         weekly_data = []
-        end_date = max_date
-        for i in range(8):
-            week_start = end_date - timedelta(days=end_date.weekday() + 7*i)
-            week_end = week_start + timedelta(days=6)
-            week_amount = sum(
-                exp["amount"] for exp in expenses
-                if week_start <= datetime.fromisoformat(exp["date"]) <= week_end
-            )
-            weekly_data.append({
-                "week": week_start.strftime("%Y-%m-%d"),
-                "amount": week_amount
-            })
-        weekly_data.reverse()
+        try:
+            end_date_obj = max_date if 'max_date' in locals() else datetime.now()
+            for i in range(8):
+                week_start = end_date_obj - timedelta(days=end_date_obj.weekday() + 7*i)
+                week_end = week_start + timedelta(days=6)
+                week_amount = sum(
+                    float(exp["amount"]) for exp in expenses
+                    if week_start.date().isoformat() <= exp["date"] <= week_end.date().isoformat()
+                )
+                weekly_data.append({
+                    "week": week_start.strftime("%Y-%m-%d"),
+                    "amount": week_amount
+                })
+            weekly_data.reverse()
+        except:
+            weekly_data = []
         
         # Priority distribution
         priority_distribution = {}
         for exp in expenses:
-            priority = exp["priority"]
-            priority_distribution[priority] = priority_distribution.get(priority, 0) + exp["amount"]
+            priority = exp.get("priority", "Medium")
+            priority_distribution[priority] = priority_distribution.get(priority, 0) + float(exp["amount"])
         
         # Top expenses
-        top_expenses = sorted(expenses, key=lambda x: x["amount"], reverse=True)[:10]
+        try:
+            top_expenses = sorted(expenses, key=lambda x: float(x["amount"]), reverse=True)[:10]
+        except:
+            top_expenses = []
         
         # Daily pattern (spending by day of week)
         daily_pattern = {}
         for exp in expenses:
-            date = datetime.fromisoformat(exp["date"])
-            day_name = date.strftime("%A")
-            daily_pattern[day_name] = daily_pattern.get(day_name, 0) + exp["amount"]
+            try:
+                date = datetime.fromisoformat(exp["date"])
+                day_name = date.strftime("%A")
+                daily_pattern[day_name] = daily_pattern.get(day_name, 0) + float(exp["amount"])
+            except:
+                continue
         
         # Spending velocity (last 7 days vs previous 7 days)
-        today = datetime.now()
-        last_7_days_start = today - timedelta(days=7)
-        previous_7_days_start = last_7_days_start - timedelta(days=7)
-        
-        last_7_days_spent = sum(
-            exp["amount"] for exp in expenses
-            if last_7_days_start <= datetime.fromisoformat(exp["date"]) <= today
-        )
-        
-        previous_7_days_spent = sum(
-            exp["amount"] for exp in expenses
-            if previous_7_days_start <= datetime.fromisoformat(exp["date"]) < last_7_days_start
-        )
-        
-        spending_velocity = {
-            "current_week": last_7_days_spent,
-            "previous_week": previous_7_days_spent,
-            "change_percentage": ((last_7_days_spent - previous_7_days_spent) / previous_7_days_spent * 100) if previous_7_days_spent > 0 else 0
-        }
+        try:
+            today = datetime.now().date()
+            last_7_days_start = today - timedelta(days=7)
+            previous_7_days_start = last_7_days_start - timedelta(days=7)
+            
+            last_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if last_7_days_start.isoformat() <= exp["date"] <= today.isoformat()
+            )
+            
+            previous_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if previous_7_days_start.isoformat() <= exp["date"] < last_7_days_start.isoformat()
+            )
+            
+            spending_velocity = {
+                "current_week": last_7_days_spent,
+                "previous_week": previous_7_days_spent,
+                "change_percentage": ((last_7_days_spent - previous_7_days_spent) / previous_7_days_spent * 100) if previous_7_days_spent > 0 else 0
+            }
+        except:
+            spending_velocity = {
+                "current_week": 0,
+                "previous_week": 0,
+                "change_percentage": 0
+            }
         
         # Savings rate (assuming monthly income of 15000 INR for student)
-        monthly_income = 15000
-        current_month = today.strftime("%Y-%m")
-        current_month_spent = sum(
-            exp["amount"] for exp in expenses
-            if exp["date"].startswith(current_month)
-        )
-        savings_rate = ((monthly_income - current_month_spent) / monthly_income * 100) if monthly_income > 0 else 0
+        try:
+            monthly_income = 15000
+            current_month = datetime.now().strftime("%Y-%m")
+            current_month_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if exp["date"].startswith(current_month)
+            )
+            savings_rate = max(0, ((monthly_income - current_month_spent) / monthly_income * 100)) if monthly_income > 0 else 0
+        except:
+            savings_rate = 0
         
         return AnalyticsResponse(
             total_spent=total_spent,
@@ -559,8 +599,9 @@ def get_analytics_overview(
             daily_pattern=daily_pattern,
             spending_velocity=spending_velocity,
             savings_rate=savings_rate
-        )
+        ).dict()
     except Exception as e:
+        print(f"Error in analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/budgets/alerts")
@@ -570,12 +611,12 @@ def get_budget_alerts():
         expenses = get_expenses()
         current_month = datetime.now().strftime("%Y-%m")
         
-        # Simple budget logic - you can enhance this with user-defined budgets
+        # Simple budget logic
         monthly_expenses = {}
         for exp in expenses:
             if exp["date"].startswith(current_month):
                 category = exp["category"]
-                monthly_expenses[category] = monthly_expenses.get(category, 0) + exp["amount"]
+                monthly_expenses[category] = monthly_expenses.get(category, 0) + float(exp["amount"])
         
         # Default budget limits in INR
         default_budgets = {
@@ -605,17 +646,18 @@ def get_budget_alerts():
             else:
                 continue
             
-            alerts.append(BudgetAlert(
-                category=category,
-                spent=spent,
-                budget=budget,
-                percentage=percentage,
-                alert_level=alert_level
-            ))
+            alerts.append({
+                "category": category,
+                "spent": spent,
+                "budget": budget,
+                "percentage": percentage,
+                "alert_level": alert_level
+            })
         
         return alerts
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in budget alerts: {e}")
+        return []
 
 @app.get("/reports/export")
 def export_expenses_report(
@@ -639,12 +681,17 @@ def export_expenses_report(
             # Enhanced CSV format with all fields
             csv_lines = ["ID,Date,Category,Description,Amount,Priority,Tags,Notes"]
             for exp in expenses:
-                tags_str = ";".join(exp.get("tags", [])) if isinstance(exp.get("tags"), list) else exp.get("tags", "")
-                notes_str = exp.get("notes", "").replace('"', '""')
-                description_str = exp.get("description", "").replace('"', '""')
+                tags = exp.get("tags", [])
+                if isinstance(tags, str):
+                    tags_str = tags
+                else:
+                    tags_str = ";".join(tags) if tags else ""
+                
+                notes_str = str(exp.get("notes", "")).replace('"', '""')
+                description_str = str(exp.get("description", "")).replace('"', '""')
                 csv_lines.append(
                     f'{exp["id"]},{exp["date"]},{exp["category"]},'
-                    f'"{description_str}",{exp["amount"]},{exp["priority"]},'
+                    f'"{description_str}",{exp["amount"]},{exp.get("priority", "Medium")},'
                     f'"{tags_str}","{notes_str}"'
                 )
             return {"csv": "\n".join(csv_lines)}
@@ -663,7 +710,10 @@ def initialize_sample_data_endpoint():
         raise HTTPException(status_code=500, detail=str(e))
 
 # Initialize sample data when backend starts
-initialize_sample_data()
+try:
+    initialize_sample_data()
+except Exception as e:
+    print(f"Failed to initialize sample data: {e}")
 
 if __name__ == "__main__":
     import uvicorn
