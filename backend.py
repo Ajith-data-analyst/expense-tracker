@@ -4,9 +4,9 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import uuid
+import os
 from enum import Enum
-from supabase import create_client, Client
-import random
+import json
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
@@ -23,18 +23,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase configuration - UPDATE WITH YOUR CREDENTIALS
-SUPABASE_URL = "https://tinuhgygmhlnyugbinsm.supabase.co"  # Replace with your Supabase URL
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnVoZ3lnbWhsbnl1Z2JpbnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NzEzMjksImV4cCI6MjA3OTE0NzMyOX0.4y9pP8Auompl-7_vWjI3RrI2Opv8M7cduUyn1WiryVo"  # Replace with your Supabase anon key
-
-
-# Initialize Supabase client
-try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("✅ Supabase client initialized successfully")
-except Exception as e:
-    print(f"❌ Failed to initialize Supabase client: {e}")
-    supabase = None
+# Data storage file (using JSON file for simplicity on Render)
+DATA_FILE = "expenses_data.json"
 
 class ExpenseCategory(str, Enum):
     FOOD = "Food & Dining"
@@ -98,57 +88,34 @@ class BudgetAlert(BaseModel):
     percentage: float
     alert_level: str
 
-def get_expenses():
-    """Get all expenses from Supabase"""
+def load_expenses():
+    """Load expenses from JSON file"""
     try:
-        if not supabase:
-            return []
-        response = supabase.table("expenses").select("*").order("date", desc=True).execute()
-        return response.data
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                return json.load(f)
+        return []
     except Exception as e:
-        print(f"Error fetching expenses: {e}")
+        print(f"Error loading expenses: {e}")
         return []
 
-def save_expense(expense_data):
-    """Save expense to Supabase"""
+def save_expenses(expenses):
+    """Save expenses to JSON file"""
     try:
-        if not supabase:
-            raise Exception("Supabase client not initialized")
-        response = supabase.table("expenses").insert(expense_data).execute()
-        return response.data[0] if response.data else None
+        with open(DATA_FILE, 'w') as f:
+            json.dump(expenses, f, indent=2)
+        return True
     except Exception as e:
-        print(f"Error saving expense: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save expense")
+        print(f"Error saving expenses: {e}")
+        return False
 
-def update_expense_db(expense_id, update_data):
-    """Update expense in Supabase"""
-    try:
-        if not supabase:
-            raise Exception("Supabase client not initialized")
-        response = supabase.table("expenses").update(update_data).eq("id", expense_id).execute()
-        return response.data[0] if response.data else None
-    except Exception as e:
-        print(f"Error updating expense: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update expense")
-
-def delete_expense_db(expense_id):
-    """Delete expense from Supabase"""
-    try:
-        if not supabase:
-            raise Exception("Supabase client not initialized")
-        response = supabase.table("expenses").delete().eq("id", expense_id).execute()
-        return response.data[0] if response.data else None
-    except Exception as e:
-        print(f"Error deleting expense: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete expense")
+def get_expenses():
+    """Get all expenses"""
+    return load_expenses()
 
 def initialize_sample_data():
     """Initialize sample data for Chennai computer science student"""
     try:
-        if not supabase:
-            print("Supabase not initialized, skipping sample data")
-            return
-            
         existing_expenses = get_expenses()
         if len(existing_expenses) > 5:  # If already has data, don't insert
             print(f"Already have {len(existing_expenses)} expenses, skipping sample data")
@@ -157,11 +124,8 @@ def initialize_sample_data():
         print("Initializing sample data...")
         sample_expenses = generate_sample_data()
         
-        for expense in sample_expenses:
-            # Convert tags list to string for storage
-            if 'tags' in expense and isinstance(expense['tags'], list):
-                expense['tags'] = ','.join(expense['tags'])
-            save_expense(expense)
+        all_expenses = existing_expenses + sample_expenses
+        save_expenses(all_expenses)
             
         print(f"✅ Sample data initialized successfully with {len(sample_expenses)} expenses")
     except Exception as e:
@@ -232,6 +196,7 @@ def generate_sample_data():
                 expense_count += 1
         
         # Daily food expenses (skip some days)
+        import random
         if random.random() > 0.1:  # 90% days have food expenses
             food_count = random.randint(2, 4)
             for _ in range(food_count):
@@ -311,7 +276,7 @@ def read_root():
     return {
         "message": "Enhanced Expense Tracker API is running",
         "version": "2.0.0",
-        "database": "Supabase (Cloud)",
+        "database": "JSON File (Render Compatible)",
         "currency": "INR",
         "status": "healthy"
     }
@@ -320,23 +285,19 @@ def read_root():
 def create_expense(expense: ExpenseCreate):
     """Create a new expense with enhanced fields"""
     try:
+        expenses = get_expenses()
+        
         expense_data = expense.dict()
         expense_data["id"] = str(uuid.uuid4())
         expense_data["created_at"] = datetime.now().isoformat()
         expense_data["updated_at"] = datetime.now().isoformat()
         
-        # Convert tags list to string for Supabase storage
-        if 'tags' in expense_data and isinstance(expense_data['tags'], list):
-            expense_data["tags"] = ",".join(expense_data["tags"])
+        expenses.append(expense_data)
         
-        saved_expense = save_expense(expense_data)
-        if saved_expense:
-            # Convert tags back to list for response
-            if isinstance(saved_expense.get("tags"), str):
-                saved_expense["tags"] = saved_expense["tags"].split(",") if saved_expense["tags"] else []
-            return saved_expense
+        if save_expenses(expenses):
+            return expense_data
         else:
-            raise HTTPException(status_code=500, detail="Failed to create expense")
+            raise HTTPException(status_code=500, detail="Failed to save expense")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -355,12 +316,6 @@ def read_expenses(
     """Get expenses with advanced filtering"""
     try:
         expenses = get_expenses()
-        
-        # Convert tags from string to list for each expense
-        for expense in expenses:
-            if isinstance(expense.get("tags"), str):
-                expense["tags"] = expense["tags"].split(",") if expense["tags"] else []
-        
         filtered_expenses = expenses
         
         # Apply filters
@@ -402,9 +357,6 @@ def read_expense(expense_id: str):
         expenses = get_expenses()
         for expense in expenses:
             if expense["id"] == expense_id:
-                # Convert tags from string to list
-                if isinstance(expense.get("tags"), str):
-                    expense["tags"] = expense["tags"].split(",") if expense["tags"] else []
                 return expense
         raise HTTPException(status_code=404, detail="Expense not found")
     except Exception as e:
@@ -414,21 +366,19 @@ def read_expense(expense_id: str):
 def update_expense(expense_id: str, expense_update: ExpenseUpdate):
     """Update an existing expense"""
     try:
-        update_data = expense_update.dict(exclude_unset=True)
-        update_data["updated_at"] = datetime.now().isoformat()
+        expenses = get_expenses()
+        for expense in expenses:
+            if expense["id"] == expense_id:
+                update_data = expense_update.dict(exclude_unset=True)
+                update_data["updated_at"] = datetime.now().isoformat()
+                expense.update(update_data)
+                
+                if save_expenses(expenses):
+                    return expense
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to update expense")
         
-        # Convert tags list to string for Supabase storage if present
-        if "tags" in update_data and isinstance(update_data["tags"], list):
-            update_data["tags"] = ",".join(update_data["tags"])
-        
-        updated_expense = update_expense_db(expense_id, update_data)
-        if updated_expense:
-            # Convert tags back to list for response
-            if isinstance(updated_expense.get("tags"), str):
-                updated_expense["tags"] = updated_expense["tags"].split(",") if updated_expense["tags"] else []
-            return updated_expense
-        else:
-            raise HTTPException(status_code=404, detail="Expense not found")
+        raise HTTPException(status_code=404, detail="Expense not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -436,14 +386,16 @@ def update_expense(expense_id: str, expense_update: ExpenseUpdate):
 def delete_expense(expense_id: str):
     """Delete an expense by ID"""
     try:
-        deleted_expense = delete_expense_db(expense_id)
-        if deleted_expense:
-            # Convert tags back to list for response
-            if isinstance(deleted_expense.get("tags"), str):
-                deleted_expense["tags"] = deleted_expense["tags"].split(",") if deleted_expense["tags"] else []
-            return {"message": "Expense deleted successfully", "deleted_expense": deleted_expense}
-        else:
-            raise HTTPException(status_code=404, detail="Expense not found")
+        expenses = get_expenses()
+        for i, expense in enumerate(expenses):
+            if expense["id"] == expense_id:
+                deleted_expense = expenses.pop(i)
+                if save_expenses(expenses):
+                    return {"message": "Expense deleted successfully", "deleted_expense": deleted_expense}
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to delete expense")
+        
+        raise HTTPException(status_code=404, detail="Expense not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -717,4 +669,5 @@ except Exception as e:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
