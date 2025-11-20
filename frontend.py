@@ -3,11 +3,8 @@ import requests
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import datetime
 from datetime import datetime, timedelta
 import json
-import io
 
 # Configuration
 BACKEND_URL = "https://expense-tracker-n6e8.onrender.com"
@@ -75,7 +72,7 @@ class EnhancedExpenseTracker:
     def test_connection(self):
         """Test connection to backend"""
         try:
-            response = requests.get(f"{self.backend_url}/")
+            response = requests.get(f"{self.backend_url}/", timeout=5)
             return response.status_code == 200
         except:
             return False
@@ -88,8 +85,6 @@ class EnhancedExpenseTracker:
             st.session_state.filters = {}
         if 'edit_expense' not in st.session_state:
             st.session_state.edit_expense = None
-        if 'data_initialized' not in st.session_state:
-            st.session_state.data_initialized = False
     
     def render_sidebar(self):
         """Render enhanced sidebar with navigation and quick stats"""
@@ -117,9 +112,9 @@ class EnhancedExpenseTracker:
             try:
                 analytics = self.get_analytics()
                 if analytics:
-                    st.metric("Total Spent", f"{CURRENCY}{analytics['total_spent']:,.0f}")
-                    st.metric("Daily Average", f"{CURRENCY}{analytics['average_daily']:.0f}")
-                    st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
+                    st.metric("Total Spent", f"{CURRENCY}{analytics.get('total_spent', 0):,.0f}")
+                    st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
+                    st.metric("Savings Rate", f"{analytics.get('savings_rate', 0):.1f}%")
                     
                     # Weekly comparison
                     velocity = analytics.get('spending_velocity', {})
@@ -127,7 +122,7 @@ class EnhancedExpenseTracker:
                         change = velocity.get('change_percentage', 0)
                         st.metric("Weekly Trend", f"{CURRENCY}{velocity.get('current_week', 0):.0f}", 
                                  delta=f"{change:+.1f}%")
-            except:
+            except Exception as e:
                 st.info("Connect to backend to see stats")
             
             st.markdown("---")
@@ -141,13 +136,12 @@ class EnhancedExpenseTracker:
         try:
             response = requests.post(f"{self.backend_url}/sample-data/initialize")
             if response.status_code == 200:
-                st.success("Sample data initialized successfully!")
-                st.session_state.data_initialized = True
+                st.success("✅ Sample data initialized successfully!")
                 st.rerun()
             else:
-                st.error("Failed to initialize sample data")
+                st.error("❌ Failed to initialize sample data")
         except Exception as e:
-            st.error(f"Error initializing sample data: {e}")
+            st.error(f"❌ Error initializing sample data: {e}")
     
     def get_analytics(self, start_date=None, end_date=None):
         """Get analytics from backend"""
@@ -158,11 +152,11 @@ class EnhancedExpenseTracker:
             if end_date:
                 params['end_date'] = end_date
                 
-            response = requests.get(f"{self.backend_url}/analytics/overview", params=params)
+            response = requests.get(f"{self.backend_url}/analytics/overview", params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
-        except:
-            pass
+        except Exception as e:
+            st.error(f"Error fetching analytics: {e}")
         return None
     
     def render_dashboard(self):
@@ -187,6 +181,7 @@ class EnhancedExpenseTracker:
         
         if not analytics:
             st.error("No data available for the selected period")
+            st.info("Try initializing sample data using the button in the sidebar")
             return
         
         # Enhanced Key Metrics
@@ -194,17 +189,17 @@ class EnhancedExpenseTracker:
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         
         with col1:
-            st.metric("Total Spent", f"{CURRENCY}{analytics['total_spent']:,.0f}")
+            st.metric("Total Spent", f"{CURRENCY}{analytics.get('total_spent', 0):,.0f}")
         with col2:
-            st.metric("Daily Average", f"{CURRENCY}{analytics['average_daily']:.0f}")
+            st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
         with col3:
             expenses_count = len(self.get_expenses())
             st.metric("Expense Count", f"{expenses_count}")
         with col4:
-            categories = len(analytics['category_breakdown'])
+            categories = len(analytics.get('category_breakdown', {}))
             st.metric("Categories", f"{categories}")
         with col5:
-            st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
+            st.metric("Savings Rate", f"{analytics.get('savings_rate', 0):.1f}%")
         with col6:
             velocity = analytics.get('spending_velocity', {})
             change = velocity.get('change_percentage', 0)
@@ -215,19 +210,23 @@ class EnhancedExpenseTracker:
         
         with col1:
             # Category breakdown pie chart
-            if analytics['category_breakdown']:
+            category_breakdown = analytics.get('category_breakdown', {})
+            if category_breakdown:
                 fig = px.pie(
-                    values=list(analytics['category_breakdown'].values()),
-                    names=list(analytics['category_breakdown'].keys()),
+                    values=list(category_breakdown.values()),
+                    names=list(category_breakdown.keys()),
                     title="Spending by Category",
                     hole=0.4
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No category data available")
         
         with col2:
             # Monthly trend
-            if analytics['monthly_trend']:
-                df_trend = pd.DataFrame(analytics['monthly_trend'])
+            monthly_trend = analytics.get('monthly_trend', [])
+            if monthly_trend:
+                df_trend = pd.DataFrame(monthly_trend)
                 fig = px.line(
                     df_trend, 
                     x='month', 
@@ -237,14 +236,17 @@ class EnhancedExpenseTracker:
                 )
                 fig.update_traces(line=dict(color='#1f77b4', width=3))
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No monthly trend data available")
         
         # Second row charts
         col1, col2 = st.columns(2)
         
         with col1:
             # Weekly spending
-            if analytics['weekly_spending']:
-                df_weekly = pd.DataFrame(analytics['weekly_spending'])
+            weekly_spending = analytics.get('weekly_spending', [])
+            if weekly_spending:
+                df_weekly = pd.DataFrame(weekly_spending)
                 fig = px.bar(
                     df_weekly,
                     x='week',
@@ -254,12 +256,15 @@ class EnhancedExpenseTracker:
                     color_continuous_scale='Viridis'
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No weekly spending data available")
         
         with col2:
             # Daily pattern
-            if analytics.get('daily_pattern'):
+            daily_pattern = analytics.get('daily_pattern', {})
+            if daily_pattern:
                 days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                daily_data = [analytics['daily_pattern'].get(day, 0) for day in days_order]
+                daily_data = [daily_pattern.get(day, 0) for day in days_order]
                 
                 fig = px.bar(
                     x=days_order,
@@ -269,18 +274,21 @@ class EnhancedExpenseTracker:
                     color_continuous_scale='Blues'
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No daily pattern data available")
         
         # Third row charts
         col1, col2 = st.columns(2)
         
         with col1:
             # Priority distribution
-            if analytics['priority_distribution']:
+            priority_distribution = analytics.get('priority_distribution', {})
+            if priority_distribution:
                 fig = px.bar(
-                    x=list(analytics['priority_distribution'].keys()),
-                    y=list(analytics['priority_distribution'].values()),
+                    x=list(priority_distribution.keys()),
+                    y=list(priority_distribution.values()),
                     title="Spending by Priority Level",
-                    color=list(analytics['priority_distribution'].keys()),
+                    color=list(priority_distribution.keys()),
                     color_discrete_map={
                         'High': '#ff4b4b',
                         'Medium': '#ffa500', 
@@ -288,32 +296,38 @@ class EnhancedExpenseTracker:
                     }
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No priority distribution data available")
         
         with col2:
             # Spending velocity
-            if analytics.get('spending_velocity'):
-                velocity = analytics['spending_velocity']
+            spending_velocity = analytics.get('spending_velocity', {})
+            if spending_velocity:
+                current = spending_velocity.get('current_week', 0)
+                previous = spending_velocity.get('previous_week', 0)
+                
                 fig = go.Figure()
-                fig.add_trace(go.Indicator(
-                    mode = "delta",
-                    value = velocity['current_week'],
-                    delta = {'reference': velocity['previous_week'], 'relative': True},
-                    title = {"text": "Weekly Spending Trend"},
-                    domain = {'row': 0, 'column': 0}
+                fig.add_trace(go.Bar(
+                    x=['Current Week', 'Previous Week'],
+                    y=[current, previous],
+                    marker_color=['#1f77b4', '#ff7f0e']
                 ))
-                fig.update_layout(
-                    grid = {'rows': 1, 'columns': 1, 'pattern': "independent"},
-                    height=300
-                )
+                fig.update_layout(title="Weekly Spending Comparison")
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No spending velocity data available")
         
         # Top expenses table
         st.subheader("🏆 Top 10 Largest Expenses")
-        if analytics['top_expenses']:
-            top_df = pd.DataFrame(analytics['top_expenses'])
-            top_df = top_df[['date', 'description', 'category', 'amount', 'priority']]
-            top_df['amount'] = top_df['amount'].apply(lambda x: f"{CURRENCY}{x:,.0f}")
-            st.dataframe(top_df, use_container_width=True)
+        top_expenses = analytics.get('top_expenses', [])
+        if top_expenses:
+            top_df = pd.DataFrame(top_expenses)
+            if not top_df.empty:
+                top_df = top_df[['date', 'description', 'category', 'amount', 'priority']]
+                top_df['amount'] = top_df['amount'].apply(lambda x: f"{CURRENCY}{float(x):,.0f}")
+                st.dataframe(top_df, use_container_width=True)
+        else:
+            st.info("No expense data available")
     
     def render_add_expense(self):
         """Render enhanced expense addition form"""
@@ -379,23 +393,25 @@ class EnhancedExpenseTracker:
                     }
                     
                     try:
-                        response = requests.post(f"{self.backend_url}/expenses/", json=expense_data)
+                        response = requests.post(f"{self.backend_url}/expenses/", json=expense_data, timeout=10)
                         if response.status_code == 200:
                             st.success("✅ Expense added successfully!")
                             st.balloons()
+                            st.rerun()
                         else:
-                            st.error(f"Error adding expense: {response.json().get('detail', 'Unknown error')}")
+                            error_detail = response.json().get('detail', 'Unknown error')
+                            st.error(f"❌ Error adding expense: {error_detail}")
                     except Exception as e:
                         st.error(f"🚫 Failed to connect to backend: {e}")
     
     def get_expenses(self, **filters):
         """Get expenses from backend with filters"""
         try:
-            response = requests.get(f"{self.backend_url}/expenses/", params=filters)
+            response = requests.get(f"{self.backend_url}/expenses/", params=filters, timeout=10)
             if response.status_code == 200:
                 return response.json()
-        except:
-            pass
+        except Exception as e:
+            st.error(f"Error fetching expenses: {e}")
         return []
     
     def render_expense_list(self):
@@ -403,7 +419,7 @@ class EnhancedExpenseTracker:
         st.header("📋 Expense Management - INR")
         
         # Advanced filters
-        with st.expander("🔍 Advanced Filters", expanded=True):
+        with st.expander("🔍 Advanced Filters", expanded=False):
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -439,7 +455,7 @@ class EnhancedExpenseTracker:
             filters['priority'] = priority_filter
         if min_amount > 0:
             filters['min_amount'] = min_amount
-        if max_amount > 0:
+        if max_amount > 0 and max_amount < 10000:
             filters['max_amount'] = max_amount
         if tags_filter:
             filters['tags'] = tags_filter
@@ -456,6 +472,7 @@ class EnhancedExpenseTracker:
         
         if not expenses:
             st.info("No expenses found matching your filters.")
+            st.info("Try initializing sample data using the button in the sidebar")
             return
         
         # Display expenses in an interactive table
@@ -489,7 +506,10 @@ class EnhancedExpenseTracker:
                     if expense.get('notes'):
                         st.caption(f"📝 {expense['notes']}")
                     if expense.get('tags'):
-                        tags_str = " ".join([f"🏷️{tag}" for tag in expense['tags']])
+                        tags = expense['tags']
+                        if isinstance(tags, str):
+                            tags = [tags]
+                        tags_str = " ".join([f"🏷️{tag}" for tag in tags])
                         st.caption(tags_str)
                 with col3:
                     st.write(f"`{expense['category']}`")
@@ -500,9 +520,10 @@ class EnhancedExpenseTracker:
                         "Medium": "orange", 
                         "Low": "green"
                     }
-                    st.write(f":{priority_color[expense['priority']]}[**{expense['priority']}**]")
+                    priority = expense.get('priority', 'Medium')
+                    st.write(f":{priority_color.get(priority, 'orange')}[**{priority}**]")
                 with col5:
-                    st.write(f"**{CURRENCY}{expense['amount']:.0f}**")
+                    st.write(f"**{CURRENCY}{float(expense['amount']):.0f}**")
                     
                     # Action buttons
                     col_edit, col_delete = st.columns(2)
@@ -519,14 +540,14 @@ class EnhancedExpenseTracker:
     def delete_expense(self, expense_id):
         """Delete an expense"""
         try:
-            response = requests.delete(f"{self.backend_url}/expenses/{expense_id}")
+            response = requests.delete(f"{self.backend_url}/expenses/{expense_id}", timeout=10)
             if response.status_code == 200:
-                st.success("Expense deleted successfully!")
+                st.success("✅ Expense deleted successfully!")
                 st.rerun()
             else:
-                st.error("Failed to delete expense")
+                st.error("❌ Failed to delete expense")
         except Exception as e:
-            st.error(f"Error deleting expense: {e}")
+            st.error(f"❌ Error deleting expense: {e}")
     
     def render_analytics(self):
         """Render comprehensive analytics page"""
@@ -560,6 +581,7 @@ class EnhancedExpenseTracker:
         
         if not analytics:
             st.info("No data available for analytics")
+            st.info("Try initializing sample data using the button in the sidebar")
             return
         
         # Enhanced Analytics Dashboard
@@ -568,11 +590,11 @@ class EnhancedExpenseTracker:
         # Row 1: Key Metrics
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Analysis Period", f"{CURRENCY}{analytics['total_spent']:,.0f}")
+            st.metric("Total Analysis Period", f"{CURRENCY}{analytics.get('total_spent', 0):,.0f}")
         with col2:
-            st.metric("Daily Average", f"{CURRENCY}{analytics['average_daily']:.0f}")
+            st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
         with col3:
-            st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
+            st.metric("Savings Rate", f"{analytics.get('savings_rate', 0):.1f}%")
         with col4:
             velocity = analytics.get('spending_velocity', {})
             change = velocity.get('change_percentage', 0)
@@ -584,9 +606,10 @@ class EnhancedExpenseTracker:
         
         with col1:
             # Spending by day of week
-            if analytics.get('daily_pattern'):
+            daily_pattern = analytics.get('daily_pattern', {})
+            if daily_pattern:
                 days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                daily_data = [analytics['daily_pattern'].get(day, 0) for day in days_order]
+                daily_data = [daily_pattern.get(day, 0) for day in days_order]
                 
                 fig = px.bar(
                     x=days_order,
@@ -596,13 +619,15 @@ class EnhancedExpenseTracker:
                     color_continuous_scale='Viridis'
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No daily pattern data available")
         
         with col2:
-            # Category trend comparison
-            if analytics['monthly_trend'] and analytics['category_breakdown']:
-                # Create a sunburst chart for category hierarchy
-                categories = list(analytics['category_breakdown'].keys())
-                amounts = list(analytics['category_breakdown'].values())
+            # Category distribution
+            category_breakdown = analytics.get('category_breakdown', {})
+            if category_breakdown:
+                categories = list(category_breakdown.keys())
+                amounts = list(category_breakdown.values())
                 
                 fig = px.pie(
                     values=amounts,
@@ -611,6 +636,8 @@ class EnhancedExpenseTracker:
                     hole=0.3
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No category data available")
         
         # Row 3: Advanced analytics
         st.subheader("🔍 Deep Dive Analytics")
@@ -618,28 +645,31 @@ class EnhancedExpenseTracker:
         
         with col1:
             # Spending velocity
-            if analytics.get('spending_velocity'):
-                velocity = analytics['spending_velocity']
-                labels = ['Current Week', 'Previous Week']
-                values = [velocity['current_week'], velocity['previous_week']]
+            spending_velocity = analytics.get('spending_velocity', {})
+            if spending_velocity:
+                current = spending_velocity.get('current_week', 0)
+                previous = spending_velocity.get('previous_week', 0)
                 
                 fig = px.bar(
-                    x=labels,
-                    y=values,
+                    x=['Current Week', 'Previous Week'],
+                    y=[current, previous],
                     title="Weekly Spending Comparison",
-                    color=values,
+                    color=[current, previous],
                     color_continuous_scale='RdYlGn_r'
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No spending velocity data available")
         
         with col2:
             # Priority analysis
-            if analytics['priority_distribution']:
+            priority_distribution = analytics.get('priority_distribution', {})
+            if priority_distribution:
                 fig = px.pie(
-                    values=list(analytics['priority_distribution'].values()),
-                    names=list(analytics['priority_distribution'].keys()),
+                    values=list(priority_distribution.values()),
+                    names=list(priority_distribution.keys()),
                     title="Spending by Priority Level",
-                    color=list(analytics['priority_distribution'].keys()),
+                    color=list(priority_distribution.keys()),
                     color_discrete_map={
                         'High': '#ff4b4b',
                         'Medium': '#ffa500', 
@@ -647,6 +677,8 @@ class EnhancedExpenseTracker:
                     }
                 )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No priority distribution data available")
         
         # Row 4: Predictive analytics
         st.subheader("🔮 Spending Insights & Projections")
@@ -654,56 +686,59 @@ class EnhancedExpenseTracker:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            projected_monthly = analytics['average_daily'] * 30
+            projected_monthly = analytics.get('average_daily', 0) * 30
+            current_total = analytics.get('total_spent', 0)
             st.metric(
                 "Projected Monthly", 
                 f"{CURRENCY}{projected_monthly:.0f}",
-                delta=f"{CURRENCY}{projected_monthly - analytics['total_spent']:.0f}"
+                delta=f"{CURRENCY}{projected_monthly - current_total:.0f}"
             )
         
         with col2:
             # Monthly growth rate
-            if len(analytics['monthly_trend']) > 1:
-                recent = analytics['monthly_trend'][-1]['amount']
-                previous = analytics['monthly_trend'][-2]['amount'] if len(analytics['monthly_trend']) > 1 else recent
+            monthly_trend = analytics.get('monthly_trend', [])
+            if len(monthly_trend) > 1:
+                recent = monthly_trend[-1]['amount']
+                previous = monthly_trend[-2]['amount'] if len(monthly_trend) > 1 else recent
                 growth_rate = ((recent - previous) / previous) * 100 if previous > 0 else 0
                 st.metric("Monthly Growth", f"{growth_rate:+.1f}%")
+            else:
+                st.metric("Monthly Growth", "N/A")
         
         with col3:
-            savings_potential = analytics['total_spent'] * 0.15  # Assume 15% savings potential
+            savings_potential = analytics.get('total_spent', 0) * 0.15  # Assume 15% savings potential
             st.metric("Savings Potential", f"{CURRENCY}{savings_potential:.0f}")
         
         # Financial Health Score
         st.subheader("🏥 Financial Health Score")
         
-        health_score = min(100, max(0, analytics['savings_rate'] + 50))  # Simple scoring
-        col1, col2, col3 = st.columns([1, 2, 1])
+        savings_rate = analytics.get('savings_rate', 0)
+        health_score = min(100, max(0, savings_rate + 50))  # Simple scoring
         
-        with col2:
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number+delta",
-                value = health_score,
-                domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Financial Health Score"},
-                gauge = {
-                    'axis': {'range': [None, 100]},
-                    'bar': {'color': "darkblue"},
-                    'steps': [
-                        {'range': [0, 40], 'color': "red"},
-                        {'range': [40, 70], 'color': "yellow"},
-                        {'range': [70, 100], 'color': "green"}
-                    ]
-                }
-            ))
-            fig.update_layout(height=300)
-            st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number+delta",
+            value = health_score,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "Financial Health Score"},
+            gauge = {
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 40], 'color': "red"},
+                    {'range': [40, 70], 'color': "yellow"},
+                    {'range': [70, 100], 'color': "green"}
+                ]
+            }
+        ))
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, use_container_width=True)
     
     def render_budgets(self):
         """Render budget management page"""
         st.header("💰 Budget Management & Alerts - INR")
         
         try:
-            response = requests.get(f"{self.backend_url}/budgets/alerts")
+            response = requests.get(f"{self.backend_url}/budgets/alerts", timeout=10)
             if response.status_code == 200:
                 alerts = response.json()
                 
@@ -719,6 +754,8 @@ class EnhancedExpenseTracker:
                             st.markdown(f'<div class="alert-warning">⚠️ WARNING: {alert["category"]} - {CURRENCY}{alert["spent"]:.0f} / {CURRENCY}{alert["budget"]:.0f} ({alert["percentage"]:.1f}%)</div>', unsafe_allow_html=True)
                         else:
                             st.markdown(f'<div class="alert-info">ℹ️ INFO: {alert["category"]} - {CURRENCY}{alert["spent"]:.0f} / {CURRENCY}{alert["budget"]:.0f} ({alert["percentage"]:.1f}%)</div>', unsafe_allow_html=True)
+            else:
+                st.info("No budget alerts data available")
         
         except Exception as e:
             st.error(f"Error loading budget alerts: {e}")
@@ -785,7 +822,8 @@ class EnhancedExpenseTracker:
                             "format": export_format.lower(),
                             "start_date": start_date.isoformat(),
                             "end_date": end_date.isoformat()
-                        }
+                        },
+                        timeout=10
                     )
                     
                     if response.status_code == 200:
@@ -810,12 +848,12 @@ class EnhancedExpenseTracker:
                                 use_container_width=True
                             )
                         
-                        st.success("Export generated successfully!")
+                        st.success("✅ Export generated successfully!")
                     else:
-                        st.error(f"Failed to generate export: {response.status_code}")
+                        st.error(f"❌ Failed to generate export: {response.status_code}")
                     
                 except Exception as e:
-                    st.error(f"Error generating export: {e}")
+                    st.error(f"❌ Error generating export: {e}")
         
         with col2:
             st.subheader("Quick Reports")
@@ -836,37 +874,41 @@ class EnhancedExpenseTracker:
                             st.subheader("📋 Spending Summary Report")
                             summary = df.groupby('category')['amount'].agg(['sum', 'count', 'mean']).reset_index()
                             summary.columns = ['Category', 'Total Amount', 'Number of Expenses', 'Average Amount']
-                            summary['Total Amount'] = summary['Total Amount'].apply(lambda x: f"{CURRENCY}{x:,.0f}")
-                            summary['Average Amount'] = summary['Average Amount'].apply(lambda x: f"{CURRENCY}{x:,.0f}")
+                            summary['Total Amount'] = summary['Total Amount'].apply(lambda x: f"{CURRENCY}{float(x):,.0f}")
+                            summary['Average Amount'] = summary['Average Amount'].apply(lambda x: f"{CURRENCY}{float(x):,.0f}")
                             st.dataframe(summary, use_container_width=True)
                             
                         elif report_type == "Category Analysis":
                             st.subheader("📊 Category Analysis Report")
+                            # Convert amount to float for calculations
+                            df['amount'] = df['amount'].astype(float)
                             category_stats = df.groupby('category').agg({
-                                'amount': ['sum', 'count', 'mean', 'max'],
-                                'priority': lambda x: x.mode()[0] if len(x.mode()) > 0 else 'N/A'
+                                'amount': ['sum', 'count', 'mean', 'max']
                             }).round(2)
+                            category_stats.columns = ['Total', 'Count', 'Average', 'Max']
                             st.dataframe(category_stats, use_container_width=True)
                             
                         elif report_type == "Monthly Report":
                             st.subheader("📅 Monthly Report")
-                            df['month'] = pd.to_datetime(df['date']).dt.to_period('M')
+                            df['date'] = pd.to_datetime(df['date'])
+                            df['month'] = df['date'].dt.to_period('M')
+                            df['amount'] = df['amount'].astype(float)
                             monthly = df.groupby('month').agg({
                                 'amount': ['sum', 'count'],
                                 'category': lambda x: x.mode()[0] if len(x.mode()) > 0 else 'N/A'
                             }).round(2)
+                            monthly.columns = ['Total Amount', 'Expense Count', 'Most Common Category']
                             st.dataframe(monthly, use_container_width=True)
                             
                         elif report_type == "Budget vs Actual":
                             st.subheader("💰 Budget vs Actual Report")
-                            # This would compare with user-defined budgets
                             st.info("Budget comparison report would show here with user budget data")
                     
                     else:
                         st.warning("No expenses data available for report generation")
                         
                 except Exception as e:
-                    st.error(f"Error generating report: {e}")
+                    st.error(f"❌ Error generating report: {e}")
     
     def run(self):
         """Main method to run the enhanced application"""
