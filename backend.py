@@ -7,6 +7,7 @@ import uuid
 import os
 from enum import Enum
 from supabase import create_client, Client
+import random
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
@@ -23,9 +24,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase configuration
-SUPABASE_URL = "https://tinuhgygmhlnyugbinsm.supabase.co"  # Replace with your Supabase URL
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbnVoZ3lnbWhsbnl1Z2JpbnNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NzEzMjksImV4cCI6MjA3OTE0NzMyOX0.4y9pP8Auompl-7_vWjI3RrI2Opv8M7cduUyn1WiryVo"  # Replace with your Supabase anon key
+# Supabase configuration - UPDATE WITH YOUR CREDENTIALS
+SUPABASE_URL = "https://your-project.supabase.co"  # Replace with your Supabase URL
+SUPABASE_KEY = "your-anon-key"  # Replace with your Supabase anon key
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -95,6 +96,9 @@ class AnalyticsResponse(BaseModel):
     weekly_spending: List[Dict[str, Any]]
     priority_distribution: Dict[str, float]
     top_expenses: List[Dict[str, Any]]
+    daily_pattern: Dict[str, float]
+    spending_velocity: Dict[str, float]
+    savings_rate: float
 
 class BudgetAlert(BaseModel):
     category: str
@@ -106,7 +110,7 @@ class BudgetAlert(BaseModel):
 def get_expenses():
     """Get all expenses from Supabase"""
     try:
-        response = supabase.table("expenses").select("*").execute()
+        response = supabase.table("expenses").select("*").order("date", desc=True).execute()
         return response.data
     except Exception as e:
         print(f"Error fetching expenses: {e}")
@@ -139,12 +143,159 @@ def delete_expense_db(expense_id):
         print(f"Error deleting expense: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete expense")
 
+def initialize_sample_data():
+    """Initialize sample data for Chennai computer science student"""
+    try:
+        existing_expenses = get_expenses()
+        if len(existing_expenses) > 10:  # If already has data, don't insert
+            return
+        
+        sample_expenses = generate_sample_data()
+        for expense in sample_expenses:
+            expense["tags"] = ",".join(expense["tags"])
+            save_expense(expense)
+        print("Sample data initialized successfully")
+    except Exception as e:
+        print(f"Error initializing sample data: {e}")
+
+def generate_sample_data():
+    """Generate 3 months of sample expense data for Chennai CS student"""
+    sample_data = []
+    base_date = datetime.now() - timedelta(days=90)
+    
+    # Monthly fixed expenses
+    monthly_expenses = [
+        {"desc": "Hostel Rent", "amount": 8000, "category": "Housing", "tags": ["hostel", "rent"]},
+        {"desc": "College Fees", "amount": 5000, "category": "Education", "tags": ["college", "fees"]},
+        {"desc": "Internet Bill", "amount": 700, "category": "Utilities", "tags": ["wifi", "internet"]},
+        {"desc": "Mobile Recharge", "amount": 299, "category": "Utilities", "tags": ["mobile", "recharge"]},
+    ]
+    
+    # Food expenses (daily)
+    food_items = [
+        {"desc": "Mess Lunch", "amount": 80, "tags": ["mess", "lunch"]},
+        {"desc": "Mess Dinner", "amount": 80, "tags": ["mess", "dinner"]},
+        {"desc": "Breakfast", "amount": 50, "tags": ["breakfast", "canteen"]},
+        {"desc": "Tea/Snacks", "amount": 30, "tags": ["tea", "snacks"]},
+        {"desc": "Restaurant", "amount": 300, "tags": ["restaurant", "treat"]},
+    ]
+    
+    # Transportation
+    transport_items = [
+        {"desc": "Bus Pass", "amount": 500, "tags": ["bus", "monthly"]},
+        {"desc": "Auto", "amount": 100, "tags": ["auto", "local"]},
+        {"desc": "Metro", "amount": 60, "tags": ["metro"]},
+    ]
+    
+    # Entertainment
+    entertainment_items = [
+        {"desc": "Movie Ticket", "amount": 200, "tags": ["movie", "entertainment"]},
+        {"desc": "Coffee Shop", "amount": 150, "tags": ["coffee", "friends"]},
+        {"desc": "Shopping", "amount": 500, "tags": ["clothes", "shopping"]},
+    ]
+    
+    # Education
+    education_items = [
+        {"desc": "Books", "amount": 800, "tags": ["books", "study"]},
+        {"desc": "Online Course", "amount": 1200, "tags": ["course", "online"]},
+        {"desc": "Stationery", "amount": 200, "tags": ["stationery", "college"]},
+    ]
+    
+    current_date = base_date
+    while current_date <= datetime.now():
+        # Add monthly expenses on 1st of each month
+        if current_date.day == 1:
+            for expense in monthly_expenses:
+                sample_data.append({
+                    "id": str(uuid.uuid4()),
+                    "description": expense["desc"],
+                    "amount": expense["amount"],
+                    "category": expense["category"],
+                    "date": current_date.isoformat(),
+                    "priority": "High",
+                    "tags": expense["tags"],
+                    "notes": "Monthly expense",
+                    "created_at": current_date.isoformat(),
+                    "updated_at": current_date.isoformat()
+                })
+        
+        # Daily food expenses (skip some days)
+        if random.random() > 0.1:  # 90% days have food expenses
+            food_count = random.randint(2, 4)
+            for _ in range(food_count):
+                food = random.choice(food_items)
+                sample_data.append({
+                    "id": str(uuid.uuid4()),
+                    "description": food["desc"],
+                    "amount": food["amount"],
+                    "category": "Food & Dining",
+                    "date": current_date.isoformat(),
+                    "priority": "Medium",
+                    "tags": food["tags"],
+                    "notes": "Daily food expense",
+                    "created_at": current_date.isoformat(),
+                    "updated_at": current_date.isoformat()
+                })
+        
+        # Transportation (3-4 times per week)
+        if random.random() > 0.4:
+            transport = random.choice(transport_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": transport["desc"],
+                "amount": transport["amount"],
+                "category": "Transportation",
+                "date": current_date.isoformat(),
+                "priority": "Medium",
+                "tags": transport["tags"],
+                "notes": "Transportation expense",
+                "created_at": current_date.isoformat(),
+                "updated_at": current_date.isoformat()
+            })
+        
+        # Entertainment (once per week)
+        if current_date.weekday() == 6 and random.random() > 0.3:  # Sundays
+            entertainment = random.choice(entertainment_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": entertainment["desc"],
+                "amount": entertainment["amount"],
+                "category": "Entertainment",
+                "date": current_date.isoformat(),
+                "priority": "Low",
+                "tags": entertainment["tags"],
+                "notes": "Weekend entertainment",
+                "created_at": current_date.isoformat(),
+                "updated_at": current_date.isoformat()
+            })
+        
+        # Education expenses (occasionally)
+        if random.random() > 0.8:
+            education = random.choice(education_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": education["desc"],
+                "amount": education["amount"],
+                "category": "Education",
+                "date": current_date.isoformat(),
+                "priority": "High",
+                "tags": education["tags"],
+                "notes": "Educational expense",
+                "created_at": current_date.isoformat(),
+                "updated_at": current_date.isoformat()
+            })
+        
+        current_date += timedelta(days=1)
+    
+    return sample_data
+
 @app.get("/")
 def read_root():
     return {
         "message": "Enhanced Expense Tracker API is running",
         "version": "2.0.0",
         "database": "Supabase (Cloud)",
+        "currency": "INR",
         "endpoints": [
             "/expenses/ - CRUD operations",
             "/analytics/ - Comprehensive analytics",
@@ -304,7 +455,10 @@ def get_analytics_overview(
                 monthly_trend=[],
                 weekly_spending=[],
                 priority_distribution={},
-                top_expenses=[]
+                top_expenses=[],
+                daily_pattern={},
+                spending_velocity={},
+                savings_rate=0
             )
         
         # Basic calculations
@@ -357,6 +511,43 @@ def get_analytics_overview(
         # Top expenses
         top_expenses = sorted(expenses, key=lambda x: x["amount"], reverse=True)[:10]
         
+        # Daily pattern (spending by day of week)
+        daily_pattern = {}
+        for exp in expenses:
+            date = datetime.fromisoformat(exp["date"])
+            day_name = date.strftime("%A")
+            daily_pattern[day_name] = daily_pattern.get(day_name, 0) + exp["amount"]
+        
+        # Spending velocity (last 7 days vs previous 7 days)
+        today = datetime.now()
+        last_7_days_start = today - timedelta(days=7)
+        previous_7_days_start = last_7_days_start - timedelta(days=7)
+        
+        last_7_days_spent = sum(
+            exp["amount"] for exp in expenses
+            if last_7_days_start <= datetime.fromisoformat(exp["date"]) <= today
+        )
+        
+        previous_7_days_spent = sum(
+            exp["amount"] for exp in expenses
+            if previous_7_days_start <= datetime.fromisoformat(exp["date"]) < last_7_days_start
+        )
+        
+        spending_velocity = {
+            "current_week": last_7_days_spent,
+            "previous_week": previous_7_days_spent,
+            "change_percentage": ((last_7_days_spent - previous_7_days_spent) / previous_7_days_spent * 100) if previous_7_days_spent > 0 else 0
+        }
+        
+        # Savings rate (assuming monthly income of 15000 INR for student)
+        monthly_income = 15000
+        current_month = today.strftime("%Y-%m")
+        current_month_spent = sum(
+            exp["amount"] for exp in expenses
+            if exp["date"].startswith(current_month)
+        )
+        savings_rate = ((monthly_income - current_month_spent) / monthly_income * 100) if monthly_income > 0 else 0
+        
         return AnalyticsResponse(
             total_spent=total_spent,
             average_daily=average_daily,
@@ -364,7 +555,10 @@ def get_analytics_overview(
             monthly_trend=monthly_trend,
             weekly_spending=weekly_data,
             priority_distribution=priority_distribution,
-            top_expenses=top_expenses
+            top_expenses=top_expenses,
+            daily_pattern=daily_pattern,
+            spending_velocity=spending_velocity,
+            savings_rate=savings_rate
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -383,23 +577,23 @@ def get_budget_alerts():
                 category = exp["category"]
                 monthly_expenses[category] = monthly_expenses.get(category, 0) + exp["amount"]
         
-        # Default budget limits (in a real app, these would be user-defined)
+        # Default budget limits in INR
         default_budgets = {
-            "Food & Dining": 500,
-            "Transportation": 300,
-            "Entertainment": 200,
-            "Utilities": 400,
-            "Shopping": 300,
-            "Healthcare": 150,
-            "Travel": 1000,
-            "Education": 200,
-            "Housing": 1200,
-            "Other": 300
+            "Food & Dining": 6000,
+            "Transportation": 2000,
+            "Entertainment": 1500,
+            "Utilities": 1500,
+            "Shopping": 2000,
+            "Healthcare": 1000,
+            "Travel": 3000,
+            "Education": 3000,
+            "Housing": 8000,
+            "Other": 2000
         }
         
         alerts = []
         for category, spent in monthly_expenses.items():
-            budget = default_budgets.get(category, 500)
+            budget = default_budgets.get(category, 5000)
             percentage = (spent / budget) * 100 if budget > 0 else 0
             
             if percentage >= 90:
@@ -442,15 +636,34 @@ def export_expenses_report(
         if format == "json":
             return expenses
         elif format == "csv":
-            # Simple CSV format
-            csv_lines = ["Date,Category,Description,Amount,Priority"]
+            # Enhanced CSV format with all fields
+            csv_lines = ["ID,Date,Category,Description,Amount,Priority,Tags,Notes"]
             for exp in expenses:
-                csv_lines.append(f'{exp["date"]},{exp["category"]},"{exp["description"]}",{exp["amount"]},{exp["priority"]}')
+                tags_str = ";".join(exp.get("tags", [])) if isinstance(exp.get("tags"), list) else exp.get("tags", "")
+                notes_str = exp.get("notes", "").replace('"', '""')
+                description_str = exp.get("description", "").replace('"', '""')
+                csv_lines.append(
+                    f'{exp["id"]},{exp["date"]},{exp["category"]},'
+                    f'"{description_str}",{exp["amount"]},{exp["priority"]},'
+                    f'"{tags_str}","{notes_str}"'
+                )
             return {"csv": "\n".join(csv_lines)}
         else:
             raise HTTPException(status_code=400, detail="Unsupported format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sample-data/initialize")
+def initialize_sample_data_endpoint():
+    """Initialize sample data endpoint"""
+    try:
+        initialize_sample_data()
+        return {"message": "Sample data initialized successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Initialize sample data when backend starts
+initialize_sample_data()
 
 if __name__ == "__main__":
     import uvicorn
