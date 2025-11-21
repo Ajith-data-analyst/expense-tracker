@@ -80,11 +80,18 @@ class EnhancedExpenseTracker:
         st.markdown(f'<h1 class="main-header">💸 Super Expense Tracker Pro - {CURRENCY}</h1>', unsafe_allow_html=True)
     
     def test_connection(self):
-        """Test connection to backend"""
+        """Test connection to backend with enhanced error handling"""
         try:
-            response = requests.get(f"{self.backend_url}/", timeout=5)
+            response = requests.get(f"{self.backend_url}/", timeout=10)
             return response.status_code == 200
-        except:
+        except requests.exceptions.Timeout:
+            st.error("⏰ Backend connection timeout")
+            return False
+        except requests.exceptions.ConnectionError:
+            st.error("🔌 Cannot connect to backend server")
+            return False
+        except Exception as e:
+            st.error(f"🚫 Connection error: {e}")
             return False
     
     def initialize_session_state(self):
@@ -103,6 +110,8 @@ class EnhancedExpenseTracker:
             st.session_state.show_account_modal = False
         if 'search_query' not in st.session_state:
             st.session_state.search_query = ""
+        if 'form_cleared' not in st.session_state:
+            st.session_state.form_cleared = False
     
     def render_footer(self):
         """Render footer with tech stack and copyright"""
@@ -115,13 +124,13 @@ class EnhancedExpenseTracker:
         """, unsafe_allow_html=True)
     
     def render_account_modal(self):
-        """Render account creation/login modal"""
+        """Render account creation/login modal with forgot password and admin features"""
         if st.session_state.show_account_modal:
             with st.container():
                 st.markdown("---")
                 st.subheader("🔐 My Account")
                 
-                tab1, tab2 = st.tabs(["Login", "Create New Account"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Login", "Create New Account", "Forgot Password", "Admin"])
                 
                 with tab1:
                     with st.form("login_form"):
@@ -134,7 +143,8 @@ class EnhancedExpenseTracker:
                                 try:
                                     response = requests.post(
                                         f"{self.backend_url}/users/login",
-                                        json={"phone_number": phone_number, "password": password}
+                                        json={"phone_number": phone_number, "password": password},
+                                        timeout=10
                                     )
                                     if response.status_code == 200:
                                         data = response.json()
@@ -145,6 +155,8 @@ class EnhancedExpenseTracker:
                                         st.rerun()
                                     else:
                                         st.error("❌ Invalid credentials")
+                                except requests.exceptions.Timeout:
+                                    st.error("⏰ Login request timed out")
                                 except Exception as e:
                                     st.error(f"❌ Login failed: {e}")
                             else:
@@ -162,7 +174,8 @@ class EnhancedExpenseTracker:
                                 try:
                                     response = requests.post(
                                         f"{self.backend_url}/users/register",
-                                        json={"phone_number": new_phone, "password": new_password}
+                                        json={"phone_number": new_phone, "password": new_password},
+                                        timeout=10
                                     )
                                     if response.status_code == 200:
                                         data = response.json()
@@ -172,13 +185,98 @@ class EnhancedExpenseTracker:
                                         st.success("✅ Account created successfully!")
                                         st.rerun()
                                     else:
-                                        st.error("❌ Account creation failed - phone number may already exist")
+                                        error_detail = "Account creation failed - phone number may already exist"
+                                        try:
+                                            error_data = response.json()
+                                            error_detail = error_data.get('detail', error_detail)
+                                        except:
+                                            pass
+                                        st.error(f"❌ {error_detail}")
+                                except requests.exceptions.Timeout:
+                                    st.error("⏰ Registration request timed out")
                                 except Exception as e:
                                     st.error(f"❌ Registration failed: {e}")
                             else:
                                 st.error("❌ Please check: Phone number, 6-digit password, and password confirmation")
                 
-                if st.button("Close"):
+                with tab3:
+                    st.info("Enter admin code to reset your password")
+                    with st.form("forgot_password_form"):
+                        admin_code = st.text_input("Admin Code", placeholder="Enter admin code", type="password")
+                        reset_phone = st.text_input("Phone Number", placeholder="Enter your phone number")
+                        new_password = st.text_input("New Password", type="password", placeholder="Enter new 6-digit password")
+                        reset_submitted = st.form_submit_button("Reset Password")
+                        
+                        if reset_submitted:
+                            if admin_code and reset_phone and len(new_password) == 6:
+                                try:
+                                    response = requests.post(
+                                        f"{self.backend_url}/users/forgot-password",
+                                        json={
+                                            "phone_number": reset_phone,
+                                            "new_password": new_password,
+                                            "admin_code": admin_code
+                                        },
+                                        timeout=10
+                                    )
+                                    if response.status_code == 200:
+                                        st.success("✅ Password reset successfully!")
+                                    else:
+                                        error_detail = "Password reset failed"
+                                        try:
+                                            error_data = response.json()
+                                            error_detail = error_data.get('detail', error_detail)
+                                        except:
+                                            pass
+                                        st.error(f"❌ {error_detail}")
+                                except requests.exceptions.Timeout:
+                                    st.error("⏰ Password reset request timed out")
+                                except Exception as e:
+                                    st.error(f"❌ Password reset failed: {e}")
+                            else:
+                                st.error("❌ Please fill all fields correctly")
+                
+                with tab4:
+                    st.info("Admin access to download complete database")
+                    with st.form("admin_form"):
+                        admin_code = st.text_input("Admin Code", placeholder="Enter admin code", type="password", key="admin_code")
+                        download_submitted = st.form_submit_button("Download Database")
+                        
+                        if download_submitted:
+                            if admin_code == "2139":
+                                try:
+                                    response = requests.get(
+                                        f"{self.backend_url}/admin/download-db",
+                                        params={"admin_code": admin_code},
+                                        timeout=15
+                                    )
+                                    if response.status_code == 200:
+                                        data = response.json()
+                                        json_str = json.dumps(data, indent=2)
+                                        st.download_button(
+                                            label="📥 Download Complete Database",
+                                            data=json_str,
+                                            file_name=f"expense_tracker_db_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                                            mime="application/json",
+                                            use_container_width=True
+                                        )
+                                        st.success("✅ Database export ready for download!")
+                                    else:
+                                        error_detail = "Database export failed"
+                                        try:
+                                            error_data = response.json()
+                                            error_detail = error_data.get('detail', error_detail)
+                                        except:
+                                            pass
+                                        st.error(f"❌ {error_detail}")
+                                except requests.exceptions.Timeout:
+                                    st.error("⏰ Database export request timed out")
+                                except Exception as e:
+                                    st.error(f"❌ Database export failed: {e}")
+                            else:
+                                st.error("❌ Invalid admin code")
+                
+                if st.button("Close", key="close_account_modal"):
                     st.session_state.show_account_modal = False
                     st.rerun()
     
@@ -236,19 +334,31 @@ class EnhancedExpenseTracker:
                     st.rerun()
     
     def initialize_sample_data(self):
-        """Initialize sample data"""
+        """Initialize sample data with error handling"""
         try:
-            response = requests.post(f"{self.backend_url}/sample-data/initialize", params={"user_id": st.session_state.user_id})
+            response = requests.post(
+                f"{self.backend_url}/sample-data/initialize", 
+                params={"user_id": st.session_state.user_id},
+                timeout=10
+            )
             if response.status_code == 200:
                 st.success("✅ Sample data initialized successfully!")
                 st.rerun()
             else:
-                st.error("❌ Failed to initialize sample data")
+                error_detail = "Failed to initialize sample data"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get('detail', error_detail)
+                except:
+                    pass
+                st.error(f"❌ {error_detail}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Sample data initialization timed out")
         except Exception as e:
             st.error(f"❌ Error initializing sample data: {e}")
     
     def get_analytics(self, start_date=None, end_date=None):
-        """Get analytics from backend"""
+        """Get analytics from backend with error handling"""
         try:
             params = {"user_id": st.session_state.user_id}
             if start_date:
@@ -256,18 +366,22 @@ class EnhancedExpenseTracker:
             if end_date:
                 params['end_date'] = end_date
                 
-            response = requests.get(f"{self.backend_url}/analytics/overview", params=params, timeout=10)
+            response = requests.get(f"{self.backend_url}/analytics/overview", params=params, timeout=15)
             if response.status_code == 200:
                 return response.json()
+            else:
+                st.error(f"Analytics API error: {response.status_code}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Analytics request timed out")
         except Exception as e:
             st.error(f"Error fetching analytics: {e}")
         return None
     
     def render_dashboard(self):
-        """Render comprehensive dashboard"""
+        """Render comprehensive dashboard with fixed filters"""
         st.header("📊 Financial Dashboard - INR")
         
-        # Date range filter with clear option
+        # Date range filter with clear option - FIXED
         col1, col2, col3 = st.columns([2,2,1])
         with col1:
             start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30), key="dashboard_start")
@@ -279,21 +393,25 @@ class EnhancedExpenseTracker:
             with col_apply:
                 if st.button("Apply Filter"):
                     st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                    st.rerun()
             with col_clear:
                 if st.button("Clear Filter"):
+                    # FIXED: Clear filters properly
                     st.session_state.filters = {}
+                    # Reset date inputs by rerunning
                     st.rerun()
         
-        analytics = self.get_analytics(
-            start_date=st.session_state.filters.get('start_date', start_date.isoformat()), 
-            end_date=st.session_state.filters.get('end_date', end_date.isoformat())
-        )
+        # Use filters from session state or current inputs
+        filter_start = st.session_state.filters.get('start_date', start_date.isoformat())
+        filter_end = st.session_state.filters.get('end_date', end_date.isoformat())
+        
+        analytics = self.get_analytics(start_date=filter_start, end_date=filter_end)
         
         if not analytics:
             st.error("No data available for the selected period")
             return
         
-        # Enhanced Key Metrics - Fixed expense count
+        # Enhanced Key Metrics - FIXED expense count
         st.subheader("📈 Key Financial Metrics")
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         
@@ -302,11 +420,12 @@ class EnhancedExpenseTracker:
         with col2:
             st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
         with col3:
-            # Fixed: Get actual expense count from filtered data
-            expenses_count = len(self.get_expenses(
-                start_date=st.session_state.filters.get('start_date'),
-                end_date=st.session_state.filters.get('end_date')
-            ))
+            # FIXED: Get actual expense count from filtered data
+            expenses = self.get_expenses(
+                start_date=filter_start,
+                end_date=filter_end
+            )
+            expenses_count = len(expenses)
             st.metric("Expense Count", f"{expenses_count}")
         with col4:
             categories = len(analytics.get('category_breakdown', {}))
@@ -515,12 +634,20 @@ class EnhancedExpenseTracker:
                         if response.status_code == 200:
                             st.success(success_message)
                             st.balloons()
-                            # Clear edit mode
+                            # Clear edit mode and form
                             st.session_state.edit_expense = None
+                            st.session_state.form_cleared = True
                             st.rerun()
                         else:
-                            error_detail = response.json().get('detail', 'Unknown error')
+                            error_detail = "Unknown error"
+                            try:
+                                error_data = response.json()
+                                error_detail = error_data.get('detail', error_detail)
+                            except:
+                                pass
                             st.error(f"❌ Error: {error_detail}")
+                    except requests.exceptions.Timeout:
+                        st.error("⏰ Request timed out")
                     except Exception as e:
                         st.error(f"🚫 Failed to connect to backend: {e}")
         
@@ -531,21 +658,31 @@ class EnhancedExpenseTracker:
                 st.rerun()
     
     def get_expenses(self, **filters):
-        """Get expenses from backend with filters"""
+        """Get expenses from backend with filters and error handling"""
         try:
-            params = {"user_id": st.session_state.user_id, **filters}
+            params = {"user_id": st.session_state.user_id}
+            
+            # Add filters
+            for key, value in filters.items():
+                if value is not None:
+                    params[key] = value
+            
             response = requests.get(f"{self.backend_url}/expenses/", params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
+            else:
+                st.error(f"Error fetching expenses: {response.status_code}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Expenses request timed out")
         except Exception as e:
             st.error(f"Error fetching expenses: {e}")
         return []
     
     def render_expense_list(self):
-        """Render enhanced expense list with advanced filtering"""
+        """Render enhanced expense list with advanced filtering - FIXED VERSION"""
         st.header("📋 Expense Management - INR")
         
-        # Search bar
+        # Search bar - FIXED clear search
         col1, col2 = st.columns([3, 1])
         with col1:
             search_query = st.text_input(
@@ -556,10 +693,13 @@ class EnhancedExpenseTracker:
             )
         with col2:
             if st.button("Clear Search", use_container_width=True):
+                # FIXED: Clear search properly
                 st.session_state.search_query = ""
+                if 'filters' in st.session_state:
+                    st.session_state.filters.pop('search', None)
                 st.rerun()
         
-        # Advanced filters
+        # Advanced filters - FIXED functionality
         with st.expander("🔍 Advanced Filters", expanded=False):
             col1, col2, col3 = st.columns(3)
             
@@ -594,46 +734,43 @@ class EnhancedExpenseTracker:
             col_apply, col_clear = st.columns(2)
             with col_apply:
                 if st.button("Apply Filters", use_container_width=True):
-                    # Store filters in session state
-                    st.session_state.filters = {
-                        'category': category_filter if category_filter != "All" else None,
-                        'priority': priority_filter if priority_filter != "All" else None,
-                        'min_amount': min_amount if min_amount > 0 else None,
-                        'max_amount': max_amount if max_amount < 10000 else None,
-                        'tags': tags_filter if tags_filter else None,
-                        'search': search_query if search_query else None,
-                        'date_range': date_range
-                    }
+                    # Store filters in session state - FIXED
+                    filters = {}
+                    if category_filter != "All":
+                        filters['category'] = category_filter
+                    if priority_filter != "All":
+                        filters['priority'] = priority_filter
+                    if min_amount > 0:
+                        filters['min_amount'] = min_amount
+                    if max_amount < 10000:
+                        filters['max_amount'] = max_amount
+                    if tags_filter:
+                        filters['tags'] = tags_filter
+                    if search_query:
+                        filters['search'] = search_query
+                    
+                    # Date range filter - FIXED
+                    if date_range == "Last 7 Days":
+                        filters['start_date'] = (datetime.now() - timedelta(days=7)).isoformat()
+                    elif date_range == "Last 30 Days":
+                        filters['start_date'] = (datetime.now() - timedelta(days=30)).isoformat()
+                    elif date_range == "Last 90 Days":
+                        filters['start_date'] = (datetime.now() - timedelta(days=90)).isoformat()
+                    elif date_range == "Custom":
+                        # For custom, use the date inputs from dashboard or add custom ones
+                        st.info("Use date range from Dashboard tab for custom dates")
+                    
+                    st.session_state.filters = filters
                     st.rerun()
             with col_clear:
                 if st.button("Clear All Filters", use_container_width=True):
+                    # FIXED: Clear all filters properly
                     st.session_state.filters = {}
                     st.session_state.search_query = ""
                     st.rerun()
         
-        # Build filter parameters
-        filters = {}
-        if st.session_state.get('filters', {}).get('category'):
-            filters['category'] = st.session_state.filters['category']
-        if st.session_state.get('filters', {}).get('priority'):
-            filters['priority'] = st.session_state.filters['priority']
-        if st.session_state.get('filters', {}).get('min_amount'):
-            filters['min_amount'] = st.session_state.filters['min_amount']
-        if st.session_state.get('filters', {}).get('max_amount'):
-            filters['max_amount'] = st.session_state.filters['max_amount']
-        if st.session_state.get('filters', {}).get('tags'):
-            filters['tags'] = st.session_state.filters['tags']
-        if search_query:
-            filters['search'] = search_query
-        
-        # Date range filter
-        date_range = st.session_state.get('filters', {}).get('date_range', 'All Time')
-        if date_range == "Last 7 Days":
-            filters['start_date'] = (datetime.now() - timedelta(days=7)).isoformat()
-        elif date_range == "Last 30 Days":
-            filters['start_date'] = (datetime.now() - timedelta(days=30)).isoformat()
-        elif date_range == "Last 90 Days":
-            filters['start_date'] = (datetime.now() - timedelta(days=90)).isoformat()
+        # Build filter parameters from session state
+        filters = st.session_state.get('filters', {})
         
         expenses = self.get_expenses(**filters)
         
@@ -705,7 +842,7 @@ class EnhancedExpenseTracker:
                 st.markdown("---")
     
     def delete_expense(self, expense_id):
-        """Delete an expense"""
+        """Delete an expense with error handling"""
         try:
             response = requests.delete(
                 f"{self.backend_url}/expenses/{expense_id}", 
@@ -716,12 +853,20 @@ class EnhancedExpenseTracker:
                 st.success("✅ Expense deleted successfully!")
                 st.rerun()
             else:
-                st.error("❌ Failed to delete expense")
+                error_detail = "Failed to delete expense"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get('detail', error_detail)
+                except:
+                    pass
+                st.error(f"❌ {error_detail}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Delete request timed out")
         except Exception as e:
             st.error(f"❌ Error deleting expense: {e}")
     
     def render_analytics(self):
-        """Render comprehensive analytics page"""
+        """Render comprehensive analytics page with error handling"""
         st.header("📈 Advanced Analytics - INR")
         
         # Time period selection
@@ -875,7 +1020,7 @@ class EnhancedExpenseTracker:
         st.plotly_chart(fig, use_container_width=True)
     
     def render_budgets(self):
-        """Render budget management page"""
+        """Render budget management page with enhanced error handling"""
         st.header("💰 Budget Management & Alerts - INR")
         
         try:
@@ -902,6 +1047,8 @@ class EnhancedExpenseTracker:
             else:
                 st.info("No budget alerts data available")
         
+        except requests.exceptions.Timeout:
+            st.error("⏰ Budget alerts request timed out")
         except Exception as e:
             st.error(f"Error loading budget alerts: {e}")
         
@@ -918,11 +1065,14 @@ class EnhancedExpenseTracker:
         
         # Load current budgets from backend
         try:
-            response = requests.get(f"{self.backend_url}/budgets/{st.session_state.user_id}")
+            response = requests.get(f"{self.backend_url}/budgets/{st.session_state.user_id}", timeout=10)
             if response.status_code == 200:
                 user_budgets = response.json()
             else:
                 user_budgets = {}
+        except requests.exceptions.Timeout:
+            st.error("⏰ Budgets request timed out")
+            user_budgets = {}
         except Exception as e:
             st.error(f"Error loading budgets: {e}")
             user_budgets = {}
@@ -958,18 +1108,27 @@ class EnhancedExpenseTracker:
             try:
                 response = requests.post(
                     f"{self.backend_url}/budgets/{st.session_state.user_id}",
-                    json=budget_values
+                    json=budget_values,
+                    timeout=10
                 )
                 if response.status_code == 200:
                     st.success("✅ Budget limits saved successfully!")
                     st.rerun()
                 else:
-                    st.error("❌ Failed to save budgets")
+                    error_detail = "Failed to save budgets"
+                    try:
+                        error_data = response.json()
+                        error_detail = error_data.get('detail', error_detail)
+                    except:
+                        pass
+                    st.error(f"❌ {error_detail}")
+            except requests.exceptions.Timeout:
+                st.error("⏰ Save budgets request timed out")
             except Exception as e:
                 st.error(f"❌ Error saving budgets: {e}")
     
     def render_export(self):
-        """Render data export page with working functionality"""
+        """Render data export page with working functionality and error handling"""
         st.header("📤 Data Export & Reports - INR")
         
         col1, col2 = st.columns(2)
@@ -992,7 +1151,7 @@ class EnhancedExpenseTracker:
                             "start_date": start_date.isoformat(),
                             "end_date": end_date.isoformat()
                         },
-                        timeout=10
+                        timeout=15
                     )
                     
                     if response.status_code == 200:
@@ -1019,8 +1178,16 @@ class EnhancedExpenseTracker:
                         
                         st.success("✅ Export generated successfully!")
                     else:
-                        st.error(f"❌ Failed to generate export: {response.status_code}")
+                        error_detail = f"Failed to generate export: {response.status_code}"
+                        try:
+                            error_data = response.json()
+                            error_detail = error_data.get('detail', error_detail)
+                        except:
+                            pass
+                        st.error(f"❌ {error_detail}")
                     
+                except requests.exceptions.Timeout:
+                    st.error("⏰ Export request timed out")
                 except Exception as e:
                     st.error(f"❌ Error generating export: {e}")
         
@@ -1106,6 +1273,9 @@ class EnhancedExpenseTracker:
         if not self.test_connection():
             st.error("🚫 Cannot connect to backend server. Please make sure the FastAPI server is running")
             st.info("💡 Backend URL: " + self.backend_url)
+            # Add retry button
+            if st.button("🔄 Retry Connection"):
+                st.rerun()
             return
         
         # Initialize session state
