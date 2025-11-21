@@ -8,7 +8,7 @@ import json
 import os
 
 # Configuration - Use environment variable for backend URL
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
 CURRENCY = "₹"  # Indian Rupee
 
 class EnhancedExpenseTracker:
@@ -451,7 +451,7 @@ class EnhancedExpenseTracker:
                 )
             
             with col2:
-                default_date = datetime.fromisoformat(expense_data.get('date', datetime.now().isoformat())) if expense_data.get('date') else datetime.now()
+                default_date = (lambda d: datetime.fromisoformat(d) if d else datetime.now())(expense_data.get('date')) if True else datetime.now()
                 date = st.date_input("Date *", value=default_date)
                 priority = st.selectbox(
                     "Priority",
