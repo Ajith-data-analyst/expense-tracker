@@ -451,7 +451,7 @@ class EnhancedExpenseTracker:
                 )
             
             with col2:
-                default_date = (lambda d: datetime.fromisoformat(d) if d else datetime.now())(expense_data.get('date')) if True else datetime.now()
+                default_date = datetime.fromisoformat(expense_data.get('date')) if expense_data.get('date') else datetime.now()
                 date = st.date_input("Date *", value=default_date)
                 priority = st.selectbox(
                     "Priority",
