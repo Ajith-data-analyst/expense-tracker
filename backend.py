@@ -26,6 +26,7 @@ app.add_middleware(
 # Data storage files
 DATA_FILE = "expenses_data.json"
 USERS_FILE = "users_data.json"
+BUDGETS_FILE = "budgets_data.json"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -122,6 +123,27 @@ def save_user(user_data):
     users = get_users()
     users[user_data["id"]] = user_data
     return save_data(USERS_FILE, users)
+
+def load_budgets():
+    """Load budgets from JSON file"""
+    try:
+        if os.path.exists(BUDGETS_FILE):
+            with open(BUDGETS_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        print(f"Error loading {BUDGETS_FILE}: {e}")
+        return {}
+
+def save_budgets(data):
+    """Save budgets to JSON file"""
+    try:
+        with open(BUDGETS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving {BUDGETS_FILE}: {e}")
+        return False
 
 def initialize_sample_data(user_id="default"):
     """Initialize sample data for Chennai computer science student"""
@@ -595,7 +617,8 @@ def get_budget_alerts(user_id: str = "default"):
                 category = exp["category"]
                 monthly_expenses[category] = monthly_expenses.get(category, 0) + float(exp["amount"])
         
-        # Default budget limits in INR
+        # Get user budgets, else use default budgets
+        user_budgets = load_budgets().get(user_id, {})
         default_budgets = {
             "Food & Dining": 6000,
             "Transportation": 2000,
@@ -609,9 +632,12 @@ def get_budget_alerts(user_id: str = "default"):
             "Other": 2000
         }
         
+        # Merge: user budgets override default budgets
+        budgets = {**default_budgets, **user_budgets}
+        
         alerts = []
         for category, spent in monthly_expenses.items():
-            budget = default_budgets.get(category, 5000)
+            budget = budgets.get(category, 5000)  # If category not in budgets, use 5000 as default
             percentage = (spent / budget) * 100 if budget > 0 else 0
             
             if percentage >= 90:
@@ -635,6 +661,28 @@ def get_budget_alerts(user_id: str = "default"):
     except Exception as e:
         print(f"Error in budget alerts: {e}")
         return []
+
+@app.post("/budgets/{user_id}")
+def save_user_budgets(user_id: str, budgets: Dict[str, float]):
+    """Save budgets for a user"""
+    try:
+        data = load_budgets()
+        data[user_id] = budgets
+        if save_budgets(data):
+            return {"message": "Budgets saved successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save budgets")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/budgets/{user_id}")
+def get_user_budgets(user_id: str):
+    """Get budgets for a user"""
+    try:
+        data = load_budgets()
+        return data.get(user_id, {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/reports/export")
 def export_expenses_report(
