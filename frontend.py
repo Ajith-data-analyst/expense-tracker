@@ -103,6 +103,30 @@ class EnhancedExpenseTracker:
             st.session_state.show_account_modal = False
         if 'search_query' not in st.session_state:
             st.session_state.search_query = ""
+        if 'expense_description' not in st.session_state:
+            st.session_state.expense_description = ""
+        if 'expense_amount' not in st.session_state:
+            st.session_state.expense_amount = 0.0
+        if 'expense_category' not in st.session_state:
+            st.session_state.expense_category = "Food & Dining"
+        if 'expense_date' not in st.session_state:
+            st.session_state.expense_date = datetime.now().date()
+        if 'expense_priority' not in st.session_state:
+            st.session_state.expense_priority = "Medium"
+        if 'expense_tags' not in st.session_state:
+            st.session_state.expense_tags = ""
+        if 'expense_notes' not in st.session_state:
+            st.session_state.expense_notes = ""
+    
+    def reset_expense_form(self):
+        """Reset expense form fields"""
+        st.session_state.expense_description = ""
+        st.session_state.expense_amount = 0.0
+        st.session_state.expense_category = "Food & Dining"
+        st.session_state.expense_date = datetime.now().date()
+        st.session_state.expense_priority = "Medium"
+        st.session_state.expense_tags = ""
+        st.session_state.expense_notes = ""
     
     def render_footer(self):
         """Render footer with tech stack and copyright"""
@@ -415,8 +439,25 @@ class EnhancedExpenseTracker:
         is_edit = st.session_state.edit_expense is not None
         expense_data = st.session_state.edit_expense or {}
         
-        # Use a simple form approach - Streamlit forms must be very basic
-        st.subheader("Expense Details")
+        # If in edit mode, pre-fill the form
+        if is_edit and not st.session_state.get('form_prefilled', False):
+            st.session_state.expense_description = expense_data.get('description', '')
+            st.session_state.expense_amount = float(expense_data.get('amount', 0.0))
+            st.session_state.expense_category = expense_data.get('category', 'Food & Dining')
+            
+            # Handle date safely
+            try:
+                if expense_data.get('date'):
+                    st.session_state.expense_date = datetime.fromisoformat(expense_data['date']).date()
+                else:
+                    st.session_state.expense_date = datetime.now().date()
+            except:
+                st.session_state.expense_date = datetime.now().date()
+            
+            st.session_state.expense_priority = expense_data.get('priority', 'Medium')
+            st.session_state.expense_tags = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
+            st.session_state.expense_notes = expense_data.get('notes', '')
+            st.session_state.form_prefilled = True
         
         # Create form columns
         col1, col2 = st.columns(2)
@@ -424,23 +465,19 @@ class EnhancedExpenseTracker:
         with col1:
             description = st.text_input(
                 "Description *", 
-                value=expense_data.get('description', ''),
+                value=st.session_state.expense_description,
                 placeholder="e.g., Dinner at Restaurant",
-                help="Enter a clear description of the expense"
+                help="Enter a clear description of the expense",
+                key="description_input"
             )
             
-            # Fix: Ensure amount is always a valid float
-            try:
-                amount_value = float(expense_data.get('amount', 0.0))
-            except (TypeError, ValueError):
-                amount_value = 0.0
-                
+            # FIXED: Simple number input without complex parameters
             amount = st.number_input(
                 f"Amount ({CURRENCY}) *", 
-                min_value=0.01, 
-                step=1.0,
-                value=amount_value,
-                help="Enter the expense amount"
+                min_value=0.01,
+                value=float(st.session_state.expense_amount),
+                help="Enter the expense amount",
+                key="amount_input"
             )
             
             category = st.selectbox(
@@ -450,54 +487,51 @@ class EnhancedExpenseTracker:
                     "Utilities", "Shopping", "Healthcare", 
                     "Travel", "Education", "Housing", "Other"
                 ],
-                index=0 if not expense_data.get('category') else [
+                index=[
                     "Food & Dining", "Transportation", "Entertainment", 
                     "Utilities", "Shopping", "Healthcare", 
                     "Travel", "Education", "Housing", "Other"
-                ].index(expense_data.get('category', 'Food & Dining'))
+                ].index(st.session_state.expense_category),
+                key="category_select"
             )
         
         with col2:
-            # Fix: Handle date parsing safely
-            try:
-                if expense_data.get('date'):
-                    default_date = datetime.fromisoformat(expense_data['date']).date()
-                else:
-                    default_date = datetime.now().date()
-            except:
-                default_date = datetime.now().date()
-                
-            date = st.date_input("Date *", value=default_date)
+            date = st.date_input(
+                "Date *", 
+                value=st.session_state.expense_date,
+                key="date_input"
+            )
             
             priority = st.selectbox(
                 "Priority",
                 options=["Low", "Medium", "High"],
-                index=["Low", "Medium", "High"].index(expense_data.get('priority', 'Medium')),
-                help="How essential was this expense?"
+                index=["Low", "Medium", "High"].index(st.session_state.expense_priority),
+                help="How essential was this expense?",
+                key="priority_select"
             )
             
-            tags_default = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
             tags = st.text_input(
                 "Tags (comma separated)",
-                value=tags_default,
+                value=st.session_state.expense_tags,
                 placeholder="restaurant, business, luxury",
-                help="Add tags for better categorization"
+                help="Add tags for better categorization",
+                key="tags_input"
             )
             
             notes = st.text_area(
                 "Notes", 
-                value=expense_data.get('notes', ''),
+                value=st.session_state.expense_notes,
                 placeholder="Additional details about this expense...",
-                height=100
+                height=100,
+                key="notes_input"
             )
         
-        # CRITICAL FIX: Use a regular button instead of form submit button
-        # This avoids the Streamlit form restrictions entirely
+        # Submit button
         submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            submitted = st.button(submit_text, use_container_width=True, type="primary")
+            submitted = st.button(submit_text, use_container_width=True, type="primary", key="submit_button")
         
         # Handle form submission
         if submitted:
@@ -537,8 +571,10 @@ class EnhancedExpenseTracker:
                     if response.status_code == 200:
                         st.success(success_message)
                         st.balloons()
-                        # Clear edit mode and rerun
+                        # Clear form and edit mode
+                        self.reset_expense_form()
                         st.session_state.edit_expense = None
+                        st.session_state.form_prefilled = False
                         st.rerun()
                     else:
                         error_detail = response.json().get('detail', 'Unknown error')
@@ -548,8 +584,10 @@ class EnhancedExpenseTracker:
         
         # Add cancel button in edit mode
         if is_edit:
-            if st.button("❌ Cancel Edit", use_container_width=True):
+            if st.button("❌ Cancel Edit", use_container_width=True, key="cancel_button"):
+                self.reset_expense_form()
                 st.session_state.edit_expense = None
+                st.session_state.form_prefilled = False
                 st.rerun()
     
     def get_expenses(self, **filters):
