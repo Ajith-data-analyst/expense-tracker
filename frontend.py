@@ -8,7 +8,7 @@ import json
 import os
 
 # Configuration - Use environment variable for backend URL
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 CURRENCY = "₹"  # Indian Rupee
 
 class EnhancedExpenseTracker:
@@ -103,30 +103,6 @@ class EnhancedExpenseTracker:
             st.session_state.show_account_modal = False
         if 'search_query' not in st.session_state:
             st.session_state.search_query = ""
-        if 'expense_description' not in st.session_state:
-            st.session_state.expense_description = ""
-        if 'expense_amount' not in st.session_state:
-            st.session_state.expense_amount = 0.0
-        if 'expense_category' not in st.session_state:
-            st.session_state.expense_category = "Food & Dining"
-        if 'expense_date' not in st.session_state:
-            st.session_state.expense_date = datetime.now().date()
-        if 'expense_priority' not in st.session_state:
-            st.session_state.expense_priority = "Medium"
-        if 'expense_tags' not in st.session_state:
-            st.session_state.expense_tags = ""
-        if 'expense_notes' not in st.session_state:
-            st.session_state.expense_notes = ""
-    
-    def reset_expense_form(self):
-        """Reset expense form fields"""
-        st.session_state.expense_description = ""
-        st.session_state.expense_amount = 0.0
-        st.session_state.expense_category = "Food & Dining"
-        st.session_state.expense_date = datetime.now().date()
-        st.session_state.expense_priority = "Medium"
-        st.session_state.expense_tags = ""
-        st.session_state.expense_notes = ""
     
     def render_footer(self):
         """Render footer with tech stack and copyright"""
@@ -430,164 +406,128 @@ class EnhancedExpenseTracker:
                 st.dataframe(top_df, use_container_width=True)
         else:
             st.info("No expense data available")
-
+    
     def render_add_expense(self):
-        """Render enhanced expense addition form - COMPLETELY FIXED"""
+        """Render enhanced expense addition form - COMPLETELY FIXED VERSION"""
         st.header("➕ Add New Expense - INR")
         
         # Check if we're in edit mode
         is_edit = st.session_state.edit_expense is not None
         expense_data = st.session_state.edit_expense or {}
         
-        # If in edit mode, pre-fill the form
-        if is_edit and not st.session_state.get('form_prefilled', False):
-            st.session_state.expense_description = expense_data.get('description', '')
-            st.session_state.expense_amount = float(expense_data.get('amount', 0.0))
-            st.session_state.expense_category = expense_data.get('category', 'Food & Dining')
+        # Create a simple form without complex parameters that might cause issues
+        form_key = "edit_expense_form" if is_edit else "add_expense_form"
+        
+        with st.form(key=form_key):
+            col1, col2 = st.columns(2)
             
-            # Handle date safely
-            try:
-                if expense_data.get('date'):
-                    st.session_state.expense_date = datetime.fromisoformat(expense_data['date']).date()
+            with col1:
+                description = st.text_input(
+                    "Description *", 
+                    value=expense_data.get('description', ''),
+                    placeholder="e.g., Dinner at Restaurant",
+                    help="Enter a clear description of the expense"
+                )
+                amount = st.number_input(
+                    f"Amount ({CURRENCY}) *", 
+                    min_value=0.01, 
+                    step=1.0, 
+                    format="%.2f",
+                    value=float(expense_data.get('amount', 0.0)),
+                    help="Enter the expense amount"
+                )
+                category = st.selectbox(
+                    "Category *",
+                    options=[
+                        "Food & Dining", "Transportation", "Entertainment", 
+                        "Utilities", "Shopping", "Healthcare", 
+                        "Travel", "Education", "Housing", "Other"
+                    ],
+                    index=0 if not expense_data.get('category') else [
+                        "Food & Dining", "Transportation", "Entertainment", 
+                        "Utilities", "Shopping", "Healthcare", 
+                        "Travel", "Education", "Housing", "Other"
+                    ].index(expense_data.get('category', 'Food & Dining'))
+                )
+            
+            with col2:
+                default_date = datetime.fromisoformat(expense_data.get('date', datetime.now().isoformat())) if expense_data.get('date') else datetime.now()
+                date = st.date_input("Date *", value=default_date)
+                priority = st.selectbox(
+                    "Priority",
+                    options=["Low", "Medium", "High"],
+                    index=["Low", "Medium", "High"].index(expense_data.get('priority', 'Medium')),
+                    help="How essential was this expense?"
+                )
+                tags_default = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
+                tags = st.text_input(
+                    "Tags (comma separated)",
+                    value=tags_default,
+                    placeholder="restaurant, business, luxury",
+                    help="Add tags for better categorization"
+                )
+                notes = st.text_area(
+                    "Notes", 
+                    value=expense_data.get('notes', ''),
+                    placeholder="Additional details about this expense...",
+                    height=100
+                )
+            
+            # CRITICAL FIX: Proper submit button inside form
+            submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
+            submitted = st.form_submit_button(submit_text, use_container_width=True)
+            
+            # Handle form submission INSIDE the form context
+            if submitted:
+                if not description or amount <= 0:
+                    st.error("Please fill all required fields (*)")
                 else:
-                    st.session_state.expense_date = datetime.now().date()
-            except:
-                st.session_state.expense_date = datetime.now().date()
-            
-            st.session_state.expense_priority = expense_data.get('priority', 'Medium')
-            st.session_state.expense_tags = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
-            st.session_state.expense_notes = expense_data.get('notes', '')
-            st.session_state.form_prefilled = True
-        
-        # Create form columns
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            description = st.text_input(
-                "Description *", 
-                value=st.session_state.expense_description,
-                placeholder="e.g., Dinner at Restaurant",
-                help="Enter a clear description of the expense",
-                key="description_input"
-            )
-            
-            # FIXED: Simple number input without complex parameters
-            amount = st.number_input(
-                f"Amount ({CURRENCY}) *", 
-                min_value=0.01,
-                value=float(st.session_state.expense_amount),
-                help="Enter the expense amount",
-                key="amount_input"
-            )
-            
-            category = st.selectbox(
-                "Category *",
-                options=[
-                    "Food & Dining", "Transportation", "Entertainment", 
-                    "Utilities", "Shopping", "Healthcare", 
-                    "Travel", "Education", "Housing", "Other"
-                ],
-                index=[
-                    "Food & Dining", "Transportation", "Entertainment", 
-                    "Utilities", "Shopping", "Healthcare", 
-                    "Travel", "Education", "Housing", "Other"
-                ].index(st.session_state.expense_category),
-                key="category_select"
-            )
-        
-        with col2:
-            date = st.date_input(
-                "Date *", 
-                value=st.session_state.expense_date,
-                key="date_input"
-            )
-            
-            priority = st.selectbox(
-                "Priority",
-                options=["Low", "Medium", "High"],
-                index=["Low", "Medium", "High"].index(st.session_state.expense_priority),
-                help="How essential was this expense?",
-                key="priority_select"
-            )
-            
-            tags = st.text_input(
-                "Tags (comma separated)",
-                value=st.session_state.expense_tags,
-                placeholder="restaurant, business, luxury",
-                help="Add tags for better categorization",
-                key="tags_input"
-            )
-            
-            notes = st.text_area(
-                "Notes", 
-                value=st.session_state.expense_notes,
-                placeholder="Additional details about this expense...",
-                height=100,
-                key="notes_input"
-            )
-        
-        # Submit button
-        submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            submitted = st.button(submit_text, use_container_width=True, type="primary", key="submit_button")
-        
-        # Handle form submission
-        if submitted:
-            if not description or amount <= 0:
-                st.error("Please fill all required fields (*)")
-            else:
-                expense_payload = {
-                    "description": description,
-                    "amount": float(amount),
-                    "category": category,
-                    "date": date.isoformat(),
-                    "priority": priority,
-                    "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
-                    "notes": notes if notes else None
-                }
-                
-                try:
-                    if is_edit:
-                        # Update existing expense
-                        response = requests.put(
-                            f"{self.backend_url}/expenses/{expense_data['id']}",
-                            params={"user_id": st.session_state.user_id},
-                            json=expense_payload,
-                            timeout=10
-                        )
-                        success_message = "✅ Expense updated successfully!"
-                    else:
-                        # Create new expense
-                        response = requests.post(
-                            f"{self.backend_url}/expenses/",
-                            params={"user_id": st.session_state.user_id},
-                            json=expense_payload,
-                            timeout=10
-                        )
-                        success_message = "✅ Expense added successfully!"
+                    expense_payload = {
+                        "description": description,
+                        "amount": float(amount),
+                        "category": category,
+                        "date": date.isoformat(),
+                        "priority": priority,
+                        "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+                        "notes": notes if notes else None
+                    }
                     
-                    if response.status_code == 200:
-                        st.success(success_message)
-                        st.balloons()
-                        # Clear form and edit mode
-                        self.reset_expense_form()
-                        st.session_state.edit_expense = None
-                        st.session_state.form_prefilled = False
-                        st.rerun()
-                    else:
-                        error_detail = response.json().get('detail', 'Unknown error')
-                        st.error(f"❌ Error: {error_detail}")
-                except Exception as e:
-                    st.error(f"🚫 Failed to connect to backend: {e}")
+                    try:
+                        if is_edit:
+                            # Update existing expense
+                            response = requests.put(
+                                f"{self.backend_url}/expenses/{expense_data['id']}",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense updated successfully!"
+                        else:
+                            # Create new expense
+                            response = requests.post(
+                                f"{self.backend_url}/expenses/",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense added successfully!"
+                        
+                        if response.status_code == 200:
+                            st.success(success_message)
+                            st.balloons()
+                            # Clear edit mode
+                            st.session_state.edit_expense = None
+                            st.rerun()
+                        else:
+                            error_detail = response.json().get('detail', 'Unknown error')
+                            st.error(f"❌ Error: {error_detail}")
+                    except Exception as e:
+                        st.error(f"🚫 Failed to connect to backend: {e}")
         
-        # Add cancel button in edit mode
+        # Add cancel button in edit mode (outside form)
         if is_edit:
-            if st.button("❌ Cancel Edit", use_container_width=True, key="cancel_button"):
-                self.reset_expense_form()
+            if st.button("❌ Cancel Edit", use_container_width=True):
                 st.session_state.edit_expense = None
-                st.session_state.form_prefilled = False
                 st.rerun()
     
     def get_expenses(self, **filters):
