@@ -433,7 +433,7 @@ class EnhancedExpenseTracker:
                     min_value=0.01, 
                     step=1.0, 
                     format="%.2f",
-                    value=float(expense_data.get('amount', 0.0)),
+                    value=max(0.01, float(expense_data.get('amount', 0.0))),
                     help="Enter the expense amount"
                 )
                 category = st.selectbox(
