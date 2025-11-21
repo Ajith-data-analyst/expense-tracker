@@ -8,7 +8,7 @@ import json
 import os
 
 # Configuration - Use environment variable for backend URL
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
 CURRENCY = "₹"  # Indian Rupee
 
 class EnhancedExpenseTracker:
