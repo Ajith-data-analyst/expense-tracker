@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -7,11 +8,16 @@ import uuid
 import os
 import json
 import random
+import zipfile
+import shutil
+import smtplib
+from email.mime.text import MimeText
+from email.mime.multipart import MimeMultipart
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
-    version="2.0.0",
-    description="A comprehensive expense tracking system with advanced analytics"
+    version="2.1.0",
+    description="A comprehensive expense tracking system with advanced analytics and password recovery"
 )
 
 # Add CORS middleware
@@ -27,6 +33,7 @@ app.add_middleware(
 DATA_FILE = "expenses_data.json"
 USERS_FILE = "users_data.json"
 BUDGETS_FILE = "budgets_data.json"
+RESET_CODES_FILE = "reset_codes.json"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -62,6 +69,17 @@ class User(BaseModel):
     id: str
     phone_number: str
     created_at: str
+
+class ForgotPasswordRequest(BaseModel):
+    phone_number: str
+
+class ResetPasswordRequest(BaseModel):
+    phone_number: str
+    reset_code: str
+    new_password: str
+
+class ExportPasswordRequest(BaseModel):
+    password: str
 
 class AnalyticsResponse(BaseModel):
     total_spent: float
@@ -144,6 +162,37 @@ def save_budgets(data):
     except Exception as e:
         print(f"Error saving {BUDGETS_FILE}: {e}")
         return False
+
+def load_reset_codes():
+    """Load reset codes from JSON file"""
+    try:
+        if os.path.exists(RESET_CODES_FILE):
+            with open(RESET_CODES_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        print(f"Error loading {RESET_CODES_FILE}: {e}")
+        return {}
+
+def save_reset_codes(data):
+    """Save reset codes to JSON file"""
+    try:
+        with open(RESET_CODES_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error saving {RESET_CODES_FILE}: {e}")
+        return False
+
+def generate_reset_code():
+    """Generate a 6-digit reset code"""
+    return str(random.randint(100000, 999999))
+
+def send_reset_code_sms(phone_number, code):
+    """Simulate sending reset code via SMS"""
+    print(f"SMS sent to {phone_number}: Your password reset code is {code}")
+    # In a real application, integrate with SMS service like Twilio
+    return True
 
 def initialize_sample_data(user_id="default"):
     """Initialize sample data for Chennai computer science student"""
@@ -306,10 +355,11 @@ def generate_sample_data():
 def read_root():
     return {
         "message": "Enhanced Expense Tracker API is running",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
-        "status": "healthy"
+        "status": "healthy",
+        "features": ["password_recovery", "data_export", "analytics"]
     }
 
 @app.post("/expenses/", response_model=Expense)
@@ -793,6 +843,151 @@ def get_user(user_id: str):
             user_data.pop("password", None)  # Don't return password
             return user_data
         raise HTTPException(status_code=404, detail="User not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/users/forgot-password")
+def forgot_password(request: ForgotPasswordRequest):
+    """Request password reset code"""
+    try:
+        users = get_users()
+        
+        # Find user by phone number
+        user_found = None
+        for user_id, user_data in users.items():
+            if user_data["phone_number"] == request.phone_number:
+                user_found = user_data
+                break
+        
+        if not user_found:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Generate reset code
+        reset_code = generate_reset_code()
+        reset_codes = load_reset_codes()
+        
+        # Store reset code with expiration (10 minutes)
+        reset_codes[request.phone_number] = {
+            "code": reset_code,
+            "expires_at": (datetime.now() + timedelta(minutes=10)).isoformat(),
+            "user_id": user_found["id"]
+        }
+        
+        save_reset_codes(reset_codes)
+        
+        # Send reset code (simulated)
+        send_reset_code_sms(request.phone_number, reset_code)
+        
+        return {
+            "message": "Reset code sent successfully", 
+            "code": reset_code,  # Remove this in production
+            "expires_in": "10 minutes"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/users/reset-password")
+def reset_password(request: ResetPasswordRequest):
+    """Reset password using reset code"""
+    try:
+        reset_codes = load_reset_codes()
+        
+        if request.phone_number not in reset_codes:
+            raise HTTPException(status_code=400, detail="Invalid reset code")
+        
+        reset_data = reset_codes[request.phone_number]
+        
+        # Check if code matches
+        if reset_data["code"] != request.reset_code:
+            raise HTTPException(status_code=400, detail="Invalid reset code")
+        
+        # Check if code expired
+        expires_at = datetime.fromisoformat(reset_data["expires_at"])
+        if datetime.now() > expires_at:
+            del reset_codes[request.phone_number]
+            save_reset_codes(reset_codes)
+            raise HTTPException(status_code=400, detail="Reset code expired")
+        
+        # Update user password
+        users = get_users()
+        user_id = reset_data["user_id"]
+        
+        if user_id not in users:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        users[user_id]["password"] = request.new_password
+        save_data(USERS_FILE, users)
+        
+        # Remove used reset code
+        del reset_codes[request.phone_number]
+        save_reset_codes(reset_codes)
+        
+        return {"message": "Password reset successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/users/{user_id}/export-all-data")
+def export_all_data(user_id: str, request: ExportPasswordRequest):
+    """Export all user data as ZIP file"""
+    try:
+        # Verify password
+        if request.password != "2139":
+            raise HTTPException(status_code=401, detail="Invalid export password")
+        
+        # Get all user data
+        expenses = get_expenses(user_id)
+        budgets = load_budgets().get(user_id, {})
+        users = get_users()
+        user_data = users.get(user_id, {})
+        
+        # Remove password from user data
+        if user_data:
+            user_data = user_data.copy()
+            user_data.pop("password", None)
+        
+        # Create temporary directory
+        temp_dir = f"temp_export_{user_id}_{uuid.uuid4().hex}"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Save data to files
+        with open(f"{temp_dir}/expenses.json", "w") as f:
+            json.dump(expenses, f, indent=2)
+        
+        with open(f"{temp_dir}/budgets.json", "w") as f:
+            json.dump(budgets, f, indent=2)
+        
+        with open(f"{temp_dir}/user_profile.json", "w") as f:
+            json.dump(user_data, f, indent=2)
+        
+        # Create analytics summary
+        analytics = get_analytics_overview(user_id)
+        with open(f"{temp_dir}/analytics_summary.json", "w") as f:
+            json.dump(analytics, f, indent=2)
+        
+        # Create ZIP file
+        zip_filename = f"{temp_dir}_export.zip"
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            for file in ["expenses.json", "budgets.json", "user_profile.json", "analytics_summary.json"]:
+                zipf.write(f"{temp_dir}/{file}", file)
+        
+        # Clean up temporary directory
+        shutil.rmtree(temp_dir)
+        
+        # Return ZIP file
+        return FileResponse(
+            path=zip_filename,
+            filename=f"expense_tracker_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+            media_type='application/zip'
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
