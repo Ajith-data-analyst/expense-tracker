@@ -235,46 +235,51 @@ class EnhancedExpenseTracker:
                                     st.error(f"❌ Password reset failed: {e}")
                             else:
                                 st.error("❌ Please fill all fields correctly")
-                
+
                 with tab4:
                     st.info("Admin access to download complete database")
-                    with st.form("admin_form"):
-                        admin_code = st.text_input("Admin Code", placeholder="Enter admin code", type="password", key="admin_code")
-                        download_submitted = st.form_submit_button("Download Database")
-                        
-                        if download_submitted:
-                            if admin_code == "2139":
-                                try:
-                                    response = requests.get(
-                                        f"{self.backend_url}/admin/download-db",
-                                        params={"admin_code": admin_code},
-                                        timeout=15
+
+                    # Move admin code input and button OUTSIDE any form
+                    admin_code = st.text_input("Admin Code", placeholder="Enter admin code", type="password",
+                                               key="admin_code")
+                    download_submitted = st.button("Download Database", key="download_db")
+
+                    if download_submitted:
+                        if admin_code == "2139":
+                            try:
+                                response = requests.get(
+                                    f"{self.backend_url}/admin/download-db",
+                                    params={"admin_code": admin_code},
+                                    timeout=15
+                                )
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    json_str = json.dumps(data, indent=2)
+
+                                    # Create download button that's not inside a form
+                                    st.download_button(
+                                        label="📥 Download Complete Database",
+                                        data=json_str,
+                                        file_name=f"expense_tracker_db_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                                        mime="application/json",
+                                        key="db_download_button",
+                                        use_container_width=True
                                     )
-                                    if response.status_code == 200:
-                                        data = response.json()
-                                        json_str = json.dumps(data, indent=2)
-                                        st.download_button(
-                                            label="📥 Download Complete Database",
-                                            data=json_str,
-                                            file_name=f"expense_tracker_db_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                                            mime="application/json",
-                                            use_container_width=True
-                                        )
-                                        st.success("✅ Database export ready for download!")
-                                    else:
-                                        error_detail = "Database export failed"
-                                        try:
-                                            error_data = response.json()
-                                            error_detail = error_data.get('detail', error_detail)
-                                        except:
-                                            pass
-                                        st.error(f"❌ {error_detail}")
-                                except requests.exceptions.Timeout:
-                                    st.error("⏰ Database export request timed out")
-                                except Exception as e:
-                                    st.error(f"❌ Database export failed: {e}")
-                            else:
-                                st.error("❌ Invalid admin code")
+                                    st.success("✅ Database export ready for download!")
+                                else:
+                                    error_detail = "Database export failed"
+                                    try:
+                                        error_data = response.json()
+                                        error_detail = error_data.get('detail', error_detail)
+                                    except:
+                                        pass
+                                    st.error(f"❌ {error_detail}")
+                            except requests.exceptions.Timeout:
+                                st.error("⏰ Database export request timed out")
+                            except Exception as e:
+                                st.error(f"❌ Database export failed: {e}")
+                        else:
+                            st.error("❌ Invalid admin code")
                 
                 if st.button("Close", key="close_account_modal"):
                     st.session_state.show_account_modal = False
@@ -683,17 +688,21 @@ class EnhancedExpenseTracker:
         st.header("📋 Expense Management - INR")
         
         # Search bar - FIXED clear search
+        # Search bar - FIXED search functionality
         col1, col2 = st.columns([3, 1])
         with col1:
             search_query = st.text_input(
-                "🔍 Search Expenses", 
+                "🔍 Search Expenses",
                 value=st.session_state.get('search_query', ''),
                 placeholder="Search by description, category, tags...",
                 key="expense_search"
             )
+            # Update session state when user types
+            if search_query != st.session_state.get('search_query', ''):
+                st.session_state.search_query = search_query
+
         with col2:
             if st.button("Clear Search", use_container_width=True):
-                # FIXED: Clear search properly
                 st.session_state.search_query = ""
                 if 'filters' in st.session_state:
                     st.session_state.filters.pop('search', None)
@@ -746,8 +755,8 @@ class EnhancedExpenseTracker:
                         filters['max_amount'] = max_amount
                     if tags_filter:
                         filters['tags'] = tags_filter
-                    if search_query:
-                        filters['search'] = search_query
+                    if st.session_state.search_query:
+                        filters['search'] = st.session_state.search_query
                     
                     # Date range filter - FIXED
                     if date_range == "Last 7 Days":
