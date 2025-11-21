@@ -755,6 +755,7 @@ class EnhancedExpenseTracker:
                         filters['max_amount'] = max_amount
                     if tags_filter:
                         filters['tags'] = tags_filter
+                    # CRITICAL: Include current search in filters
                     if st.session_state.search_query:
                         filters['search'] = st.session_state.search_query
                     
@@ -779,7 +780,12 @@ class EnhancedExpenseTracker:
                     st.rerun()
         
         # Build filter parameters from session state
-        filters = st.session_state.get('filters', {})
+        # Build filter parameters - FIXED SEARCH FUNCTIONALITY
+        filters = st.session_state.get('filters', {}).copy()
+
+        # CRITICAL FIX: Always include current search query in filters
+        if st.session_state.search_query:
+            filters['search'] = st.session_state.search_query
         
         expenses = self.get_expenses(**filters)
         
