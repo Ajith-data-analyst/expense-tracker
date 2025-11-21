@@ -5,9 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
+import os
 
-# Configuration
-BACKEND_URL = "https://expense-tracker-n6e8.onrender.com"
+# Configuration - Use environment variable for backend URL
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 CURRENCY = "₹"  # Indian Rupee
 
 class EnhancedExpenseTracker:
@@ -64,6 +65,15 @@ class EnhancedExpenseTracker:
         .stButton button {
             width: 100%;
         }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            margin-top: 50px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9rem;
+        }
         </style>
         """, unsafe_allow_html=True)
         
@@ -85,6 +95,92 @@ class EnhancedExpenseTracker:
             st.session_state.filters = {}
         if 'edit_expense' not in st.session_state:
             st.session_state.edit_expense = None
+        if 'user_id' not in st.session_state:
+            st.session_state.user_id = "default"
+        if 'logged_in' not in st.session_state:
+            st.session_state.logged_in = False
+        if 'show_account_modal' not in st.session_state:
+            st.session_state.show_account_modal = False
+        if 'search_query' not in st.session_state:
+            st.session_state.search_query = ""
+    
+    def render_footer(self):
+        """Render footer with tech stack and copyright"""
+        st.markdown("""
+        <div class="footer">
+            <p><strong>Tech Stack:</strong> FastAPI • Streamlit • Plotly • Pandas</p>
+            <p><strong>API:</strong> RESTful JSON API • <strong>Requirements:</strong> Python 3.8+</p>
+            <p>© 2024 Expense Tracker Pro. All rights reserved.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    def render_account_modal(self):
+        """Render account creation/login modal"""
+        if st.session_state.show_account_modal:
+            with st.container():
+                st.markdown("---")
+                st.subheader("🔐 My Account")
+                
+                tab1, tab2 = st.tabs(["Login", "Create New Account"])
+                
+                with tab1:
+                    with st.form("login_form"):
+                        phone_number = st.text_input("Phone Number", placeholder="Enter your phone number")
+                        password = st.text_input("Password", type="password", placeholder="Enter 6-digit password")
+                        login_submitted = st.form_submit_button("Login")
+                        
+                        if login_submitted:
+                            if len(phone_number) > 0 and len(password) == 6:
+                                try:
+                                    response = requests.post(
+                                        f"{self.backend_url}/users/login",
+                                        json={"phone_number": phone_number, "password": password}
+                                    )
+                                    if response.status_code == 200:
+                                        data = response.json()
+                                        st.session_state.user_id = data["user_id"]
+                                        st.session_state.logged_in = True
+                                        st.session_state.show_account_modal = False
+                                        st.success("✅ Login successful!")
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Invalid credentials")
+                                except Exception as e:
+                                    st.error(f"❌ Login failed: {e}")
+                            else:
+                                st.error("❌ Please enter valid phone number and 6-digit password")
+                
+                with tab2:
+                    with st.form("register_form"):
+                        new_phone = st.text_input("Phone Number", placeholder="Enter your phone number", key="new_phone")
+                        new_password = st.text_input("Password", type="password", placeholder="Enter 6-digit password", key="new_password")
+                        confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm 6-digit password")
+                        register_submitted = st.form_submit_button("Create Account")
+                        
+                        if register_submitted:
+                            if len(new_phone) > 0 and len(new_password) == 6 and new_password == confirm_password:
+                                try:
+                                    response = requests.post(
+                                        f"{self.backend_url}/users/register",
+                                        json={"phone_number": new_phone, "password": new_password}
+                                    )
+                                    if response.status_code == 200:
+                                        data = response.json()
+                                        st.session_state.user_id = data["user_id"]
+                                        st.session_state.logged_in = True
+                                        st.session_state.show_account_modal = False
+                                        st.success("✅ Account created successfully!")
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Account creation failed - phone number may already exist")
+                                except Exception as e:
+                                    st.error(f"❌ Registration failed: {e}")
+                            else:
+                                st.error("❌ Please check: Phone number, 6-digit password, and password confirmation")
+                
+                if st.button("Close"):
+                    st.session_state.show_account_modal = False
+                    st.rerun()
     
     def render_sidebar(self):
         """Render enhanced sidebar with navigation and quick stats"""
@@ -126,15 +222,23 @@ class EnhancedExpenseTracker:
                 st.info("Connect to backend to see stats")
             
             st.markdown("---")
-            st.markdown("## 🚀 Quick Actions")
             
-            if st.button("📊 Initialize Sample Data", use_container_width=True):
-                self.initialize_sample_data()
+            # Account management
+            if st.button("👤 Go to My Account", use_container_width=True):
+                st.session_state.show_account_modal = True
+                st.rerun()
+            
+            if st.session_state.logged_in and st.session_state.user_id != "default":
+                st.info(f"🔐 Logged in as: {st.session_state.user_id[:8]}...")
+                if st.button("🚪 Logout", use_container_width=True):
+                    st.session_state.logged_in = False
+                    st.session_state.user_id = "default"
+                    st.rerun()
     
     def initialize_sample_data(self):
         """Initialize sample data"""
         try:
-            response = requests.post(f"{self.backend_url}/sample-data/initialize")
+            response = requests.post(f"{self.backend_url}/sample-data/initialize", params={"user_id": st.session_state.user_id})
             if response.status_code == 200:
                 st.success("✅ Sample data initialized successfully!")
                 st.rerun()
@@ -146,7 +250,7 @@ class EnhancedExpenseTracker:
     def get_analytics(self, start_date=None, end_date=None):
         """Get analytics from backend"""
         try:
-            params = {}
+            params = {"user_id": st.session_state.user_id}
             if start_date:
                 params['start_date'] = start_date
             if end_date:
@@ -163,28 +267,33 @@ class EnhancedExpenseTracker:
         """Render comprehensive dashboard"""
         st.header("📊 Financial Dashboard - INR")
         
-        # Date range filter
+        # Date range filter with clear option
         col1, col2, col3 = st.columns([2,2,1])
         with col1:
-            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30), key="dashboard_start")
         with col2:
-            end_date = st.date_input("End Date", datetime.now())
+            end_date = st.date_input("End Date", datetime.now(), key="dashboard_end")
         with col3:
             st.write("")
-            if st.button("Apply Filter"):
-                st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+            col_apply, col_clear = st.columns(2)
+            with col_apply:
+                if st.button("Apply Filter"):
+                    st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+            with col_clear:
+                if st.button("Clear Filter"):
+                    st.session_state.filters = {}
+                    st.rerun()
         
         analytics = self.get_analytics(
-            start_date=start_date.isoformat(), 
-            end_date=end_date.isoformat()
+            start_date=st.session_state.filters.get('start_date', start_date.isoformat()), 
+            end_date=st.session_state.filters.get('end_date', end_date.isoformat())
         )
         
         if not analytics:
             st.error("No data available for the selected period")
-            st.info("Try initializing sample data using the button in the sidebar")
             return
         
-        # Enhanced Key Metrics
+        # Enhanced Key Metrics - Fixed expense count
         st.subheader("📈 Key Financial Metrics")
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         
@@ -193,7 +302,11 @@ class EnhancedExpenseTracker:
         with col2:
             st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
         with col3:
-            expenses_count = len(self.get_expenses())
+            # Fixed: Get actual expense count from filtered data
+            expenses_count = len(self.get_expenses(
+                start_date=st.session_state.filters.get('start_date'),
+                end_date=st.session_state.filters.get('end_date')
+            ))
             st.metric("Expense Count", f"{expenses_count}")
         with col4:
             categories = len(analytics.get('category_breakdown', {}))
@@ -223,10 +336,13 @@ class EnhancedExpenseTracker:
                 st.info("No category data available")
         
         with col2:
-            # Monthly trend
+            # Monthly trend - Fixed
             monthly_trend = analytics.get('monthly_trend', [])
             if monthly_trend:
                 df_trend = pd.DataFrame(monthly_trend)
+                # Sort by month to ensure proper ordering
+                df_trend['month'] = pd.to_datetime(df_trend['month'])
+                df_trend = df_trend.sort_values('month')
                 fig = px.line(
                     df_trend, 
                     x='month', 
@@ -235,6 +351,8 @@ class EnhancedExpenseTracker:
                     markers=True
                 )
                 fig.update_traces(line=dict(color='#1f77b4', width=3))
+                fig.update_xaxes(title_text="Month")
+                fig.update_yaxes(title_text=f"Amount ({CURRENCY})")
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("No monthly trend data available")
@@ -277,46 +395,6 @@ class EnhancedExpenseTracker:
             else:
                 st.info("No daily pattern data available")
         
-        # Third row charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Priority distribution
-            priority_distribution = analytics.get('priority_distribution', {})
-            if priority_distribution:
-                fig = px.bar(
-                    x=list(priority_distribution.keys()),
-                    y=list(priority_distribution.values()),
-                    title="Spending by Priority Level",
-                    color=list(priority_distribution.keys()),
-                    color_discrete_map={
-                        'High': '#ff4b4b',
-                        'Medium': '#ffa500', 
-                        'Low': '#4b8aff'
-                    }
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("No priority distribution data available")
-        
-        with col2:
-            # Spending velocity
-            spending_velocity = analytics.get('spending_velocity', {})
-            if spending_velocity:
-                current = spending_velocity.get('current_week', 0)
-                previous = spending_velocity.get('previous_week', 0)
-                
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=['Current Week', 'Previous Week'],
-                    y=[current, previous],
-                    marker_color=['#1f77b4', '#ff7f0e']
-                ))
-                fig.update_layout(title="Weekly Spending Comparison")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("No spending velocity data available")
-        
         # Top expenses table
         st.subheader("🏆 Top 10 Largest Expenses")
         top_expenses = analytics.get('top_expenses', [])
@@ -333,12 +411,17 @@ class EnhancedExpenseTracker:
         """Render enhanced expense addition form"""
         st.header("➕ Add New Expense - INR")
         
-        with st.form("add_expense_form", clear_on_submit=True):
+        # Check if we're in edit mode
+        is_edit = st.session_state.edit_expense is not None
+        expense_data = st.session_state.edit_expense or {}
+        
+        with st.form("add_expense_form", clear_on_submit=not is_edit):
             col1, col2 = st.columns(2)
             
             with col1:
                 description = st.text_input(
                     "Description *", 
+                    value=expense_data.get('description', ''),
                     placeholder="e.g., Dinner at Restaurant",
                     help="Enter a clear description of the expense"
                 )
@@ -347,6 +430,7 @@ class EnhancedExpenseTracker:
                     min_value=0.01, 
                     step=1.0, 
                     format="%.2f",
+                    value=float(expense_data.get('amount', 0.0)),
                     help="Enter the expense amount"
                 )
                 category = st.selectbox(
@@ -355,34 +439,49 @@ class EnhancedExpenseTracker:
                         "Food & Dining", "Transportation", "Entertainment", 
                         "Utilities", "Shopping", "Healthcare", 
                         "Travel", "Education", "Housing", "Other"
-                    ]
+                    ],
+                    index=[
+                        "Food & Dining", "Transportation", "Entertainment", 
+                        "Utilities", "Shopping", "Healthcare", 
+                        "Travel", "Education", "Housing", "Other"
+                    ].index(expense_data.get('category', 'Food & Dining')) if expense_data.get('category') in [
+                        "Food & Dining", "Transportation", "Entertainment", 
+                        "Utilities", "Shopping", "Healthcare", 
+                        "Travel", "Education", "Housing", "Other"
+                    ] else 0
                 )
             
             with col2:
-                date = st.date_input("Date *", datetime.now())
+                default_date = datetime.fromisoformat(expense_data.get('date', datetime.now().isoformat())) if expense_data.get('date') else datetime.now()
+                date = st.date_input("Date *", value=default_date)
                 priority = st.selectbox(
                     "Priority",
                     options=["Low", "Medium", "High"],
+                    index=["Low", "Medium", "High"].index(expense_data.get('priority', 'Medium')),
                     help="How essential was this expense?"
                 )
+                tags_default = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
                 tags = st.text_input(
                     "Tags (comma separated)",
+                    value=tags_default,
                     placeholder="restaurant, business, luxury",
                     help="Add tags for better categorization"
                 )
                 notes = st.text_area(
                     "Notes", 
+                    value=expense_data.get('notes', ''),
                     placeholder="Additional details about this expense...",
                     height=100
                 )
             
-            submitted = st.form_submit_button("💾 Save Expense", use_container_width=True)
+            submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
+            submitted = st.form_submit_button(submit_text, use_container_width=True)
             
             if submitted:
                 if not description or amount <= 0:
                     st.error("Please fill all required fields (*)")
                 else:
-                    expense_data = {
+                    expense_payload = {
                         "description": description,
                         "amount": float(amount),
                         "category": category,
@@ -393,21 +492,48 @@ class EnhancedExpenseTracker:
                     }
                     
                     try:
-                        response = requests.post(f"{self.backend_url}/expenses/", json=expense_data, timeout=10)
+                        if is_edit:
+                            # Update existing expense
+                            response = requests.put(
+                                f"{self.backend_url}/expenses/{expense_data['id']}",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense updated successfully!"
+                        else:
+                            # Create new expense
+                            response = requests.post(
+                                f"{self.backend_url}/expenses/",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense added successfully!"
+                        
                         if response.status_code == 200:
-                            st.success("✅ Expense added successfully!")
+                            st.success(success_message)
                             st.balloons()
+                            # Clear edit mode
+                            st.session_state.edit_expense = None
                             st.rerun()
                         else:
                             error_detail = response.json().get('detail', 'Unknown error')
-                            st.error(f"❌ Error adding expense: {error_detail}")
+                            st.error(f"❌ Error: {error_detail}")
                     except Exception as e:
                         st.error(f"🚫 Failed to connect to backend: {e}")
+        
+        # Add cancel button in edit mode
+        if is_edit:
+            if st.button("❌ Cancel Edit", use_container_width=True):
+                st.session_state.edit_expense = None
+                st.rerun()
     
     def get_expenses(self, **filters):
         """Get expenses from backend with filters"""
         try:
-            response = requests.get(f"{self.backend_url}/expenses/", params=filters, timeout=10)
+            params = {"user_id": st.session_state.user_id, **filters}
+            response = requests.get(f"{self.backend_url}/expenses/", params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
         except Exception as e:
@@ -417,6 +543,20 @@ class EnhancedExpenseTracker:
     def render_expense_list(self):
         """Render enhanced expense list with advanced filtering"""
         st.header("📋 Expense Management - INR")
+        
+        # Search bar
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            search_query = st.text_input(
+                "🔍 Search Expenses", 
+                value=st.session_state.get('search_query', ''),
+                placeholder="Search by description, category, tags...",
+                key="expense_search"
+            )
+        with col2:
+            if st.button("Clear Search", use_container_width=True):
+                st.session_state.search_query = ""
+                st.rerun()
         
         # Advanced filters
         with st.expander("🔍 Advanced Filters", expanded=False):
@@ -429,38 +569,64 @@ class EnhancedExpenseTracker:
                         "Food & Dining", "Transportation", "Entertainment", 
                         "Utilities", "Shopping", "Healthcare", 
                         "Travel", "Education", "Housing", "Other"
-                    ]
+                    ],
+                    key="category_filter"
                 )
                 priority_filter = st.selectbox(
                     "Priority Filter", 
-                    ["All", "Low", "Medium", "High"]
+                    ["All", "Low", "Medium", "High"],
+                    key="priority_filter"
                 )
             
             with col2:
-                min_amount = st.number_input(f"Min Amount ({CURRENCY})", min_value=0.0, value=0.0, step=100.0)
-                max_amount = st.number_input(f"Max Amount ({CURRENCY})", min_value=0.0, value=10000.0, step=100.0)
+                min_amount = st.number_input(f"Min Amount ({CURRENCY})", min_value=0.0, value=0.0, step=100.0, key="min_amount")
+                max_amount = st.number_input(f"Max Amount ({CURRENCY})", min_value=0.0, value=10000.0, step=100.0, key="max_amount")
             
             with col3:
-                tags_filter = st.text_input("Tags Filter", placeholder="restaurant, business")
+                tags_filter = st.text_input("Tags Filter", placeholder="restaurant, business", key="tags_filter")
                 date_range = st.selectbox(
                     "Date Range",
-                    ["All Time", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Custom"]
+                    ["All Time", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Custom"],
+                    key="date_range"
                 )
+            
+            col_apply, col_clear = st.columns(2)
+            with col_apply:
+                if st.button("Apply Filters", use_container_width=True):
+                    # Store filters in session state
+                    st.session_state.filters = {
+                        'category': category_filter if category_filter != "All" else None,
+                        'priority': priority_filter if priority_filter != "All" else None,
+                        'min_amount': min_amount if min_amount > 0 else None,
+                        'max_amount': max_amount if max_amount < 10000 else None,
+                        'tags': tags_filter if tags_filter else None,
+                        'search': search_query if search_query else None,
+                        'date_range': date_range
+                    }
+                    st.rerun()
+            with col_clear:
+                if st.button("Clear All Filters", use_container_width=True):
+                    st.session_state.filters = {}
+                    st.session_state.search_query = ""
+                    st.rerun()
         
         # Build filter parameters
         filters = {}
-        if category_filter != "All":
-            filters['category'] = category_filter
-        if priority_filter != "All":
-            filters['priority'] = priority_filter
-        if min_amount > 0:
-            filters['min_amount'] = min_amount
-        if max_amount > 0 and max_amount < 10000:
-            filters['max_amount'] = max_amount
-        if tags_filter:
-            filters['tags'] = tags_filter
+        if st.session_state.get('filters', {}).get('category'):
+            filters['category'] = st.session_state.filters['category']
+        if st.session_state.get('filters', {}).get('priority'):
+            filters['priority'] = st.session_state.filters['priority']
+        if st.session_state.get('filters', {}).get('min_amount'):
+            filters['min_amount'] = st.session_state.filters['min_amount']
+        if st.session_state.get('filters', {}).get('max_amount'):
+            filters['max_amount'] = st.session_state.filters['max_amount']
+        if st.session_state.get('filters', {}).get('tags'):
+            filters['tags'] = st.session_state.filters['tags']
+        if search_query:
+            filters['search'] = search_query
         
         # Date range filter
+        date_range = st.session_state.get('filters', {}).get('date_range', 'All Time')
         if date_range == "Last 7 Days":
             filters['start_date'] = (datetime.now() - timedelta(days=7)).isoformat()
         elif date_range == "Last 30 Days":
@@ -472,7 +638,6 @@ class EnhancedExpenseTracker:
         
         if not expenses:
             st.info("No expenses found matching your filters.")
-            st.info("Try initializing sample data using the button in the sidebar")
             return
         
         # Display expenses in an interactive table
@@ -492,10 +657,10 @@ class EnhancedExpenseTracker:
         col3.metric("Largest", f"{CURRENCY}{df['amount'].max():.0f}" if not df.empty else f"{CURRENCY}0")
         col4.metric("Smallest", f"{CURRENCY}{df['amount'].min():.0f}" if not df.empty else f"{CURRENCY}0")
         
-        # Enhanced expense display
-        st.subheader("💳 Expense Details")
+        # Enhanced expense display - Fixed to show newest first
+        st.subheader("💳 Expense Details (Newest First)")
         
-        for expense in expenses:
+        for expense in expenses:  # Already sorted by date descending from backend
             with st.container():
                 col1, col2, col3, col4, col5 = st.columns([2, 3, 2, 2, 2])
                 
@@ -531,6 +696,7 @@ class EnhancedExpenseTracker:
                         if st.button("✏️", key=f"edit_{expense['id']}"):
                             st.session_state.edit_expense = expense
                             st.session_state.page = "Add Expense"
+                            st.rerun()
                     with col_delete:
                         if st.button("🗑️", key=f"delete_{expense['id']}"):
                             self.delete_expense(expense['id'])
@@ -540,7 +706,11 @@ class EnhancedExpenseTracker:
     def delete_expense(self, expense_id):
         """Delete an expense"""
         try:
-            response = requests.delete(f"{self.backend_url}/expenses/{expense_id}", timeout=10)
+            response = requests.delete(
+                f"{self.backend_url}/expenses/{expense_id}", 
+                params={"user_id": st.session_state.user_id},
+                timeout=10
+            )
             if response.status_code == 200:
                 st.success("✅ Expense deleted successfully!")
                 st.rerun()
@@ -581,7 +751,6 @@ class EnhancedExpenseTracker:
         
         if not analytics:
             st.info("No data available for analytics")
-            st.info("Try initializing sample data using the button in the sidebar")
             return
         
         # Enhanced Analytics Dashboard
@@ -680,35 +849,6 @@ class EnhancedExpenseTracker:
             else:
                 st.info("No priority distribution data available")
         
-        # Row 4: Predictive analytics
-        st.subheader("🔮 Spending Insights & Projections")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            projected_monthly = analytics.get('average_daily', 0) * 30
-            current_total = analytics.get('total_spent', 0)
-            st.metric(
-                "Projected Monthly", 
-                f"{CURRENCY}{projected_monthly:.0f}",
-                delta=f"{CURRENCY}{projected_monthly - current_total:.0f}"
-            )
-        
-        with col2:
-            # Monthly growth rate
-            monthly_trend = analytics.get('monthly_trend', [])
-            if len(monthly_trend) > 1:
-                recent = monthly_trend[-1]['amount']
-                previous = monthly_trend[-2]['amount'] if len(monthly_trend) > 1 else recent
-                growth_rate = ((recent - previous) / previous) * 100 if previous > 0 else 0
-                st.metric("Monthly Growth", f"{growth_rate:+.1f}%")
-            else:
-                st.metric("Monthly Growth", "N/A")
-        
-        with col3:
-            savings_potential = analytics.get('total_spent', 0) * 0.15  # Assume 15% savings potential
-            st.metric("Savings Potential", f"{CURRENCY}{savings_potential:.0f}")
-        
         # Financial Health Score
         st.subheader("🏥 Financial Health Score")
         
@@ -738,7 +878,11 @@ class EnhancedExpenseTracker:
         st.header("💰 Budget Management & Alerts - INR")
         
         try:
-            response = requests.get(f"{self.backend_url}/budgets/alerts", timeout=10)
+            response = requests.get(
+                f"{self.backend_url}/budgets/alerts", 
+                params={"user_id": st.session_state.user_id},
+                timeout=10
+            )
             if response.status_code == 200:
                 alerts = response.json()
                 
@@ -819,6 +963,7 @@ class EnhancedExpenseTracker:
                     response = requests.get(
                         f"{self.backend_url}/reports/export",
                         params={
+                            "user_id": st.session_state.user_id,
                             "format": export_format.lower(),
                             "start_date": start_date.isoformat(),
                             "end_date": end_date.isoformat()
@@ -902,7 +1047,28 @@ class EnhancedExpenseTracker:
                             
                         elif report_type == "Budget vs Actual":
                             st.subheader("💰 Budget vs Actual Report")
-                            st.info("Budget comparison report would show here with user budget data")
+                            # Get budget alerts for actual comparison
+                            try:
+                                response = requests.get(
+                                    f"{self.backend_url}/budgets/alerts", 
+                                    params={"user_id": st.session_state.user_id},
+                                    timeout=10
+                                )
+                                if response.status_code == 200:
+                                    budget_alerts = response.json()
+                                    if budget_alerts:
+                                        budget_df = pd.DataFrame(budget_alerts)
+                                        budget_df = budget_df[['category', 'spent', 'budget', 'percentage']]
+                                        budget_df['spent'] = budget_df['spent'].apply(lambda x: f"{CURRENCY}{x:.0f}")
+                                        budget_df['budget'] = budget_df['budget'].apply(lambda x: f"{CURRENCY}{x:.0f}")
+                                        budget_df['percentage'] = budget_df['percentage'].apply(lambda x: f"{x:.1f}%")
+                                        st.dataframe(budget_df, use_container_width=True)
+                                    else:
+                                        st.info("No budget data available for comparison")
+                                else:
+                                    st.info("No budget data available for comparison")
+                            except:
+                                st.info("Budget comparison data not available")
                     
                     else:
                         st.warning("No expenses data available for report generation")
@@ -914,12 +1080,17 @@ class EnhancedExpenseTracker:
         """Main method to run the enhanced application"""
         # Check backend connection
         if not self.test_connection():
-            st.error("🚫 Cannot connect to backend server. Please make sure the FastAPI server is running on localhost:8000")
-            st.info("💡 To start the backend server, run: `python backend.py`")
+            st.error("🚫 Cannot connect to backend server. Please make sure the FastAPI server is running")
+            st.info("💡 Backend URL: " + self.backend_url)
             return
         
         # Initialize session state
         self.initialize_session_state()
+        
+        # Render account modal if needed
+        if st.session_state.show_account_modal:
+            self.render_account_modal()
+            return
         
         # Render sidebar
         self.render_sidebar()
@@ -937,6 +1108,9 @@ class EnhancedExpenseTracker:
             self.render_budgets()
         elif st.session_state.page == "Export":
             self.render_export()
+        
+        # Render footer
+        self.render_footer()
 
 # Run the application
 if __name__ == "__main__":

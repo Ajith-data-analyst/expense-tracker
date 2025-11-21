@@ -23,8 +23,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Data storage file (using JSON file for simplicity on Render)
+# Data storage files
 DATA_FILE = "expenses_data.json"
+USERS_FILE = "users_data.json"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -52,6 +53,15 @@ class ExpenseUpdate(BaseModel):
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
 
+class UserCreate(BaseModel):
+    phone_number: str
+    password: str
+
+class User(BaseModel):
+    id: str
+    phone_number: str
+    created_at: str
+
 class AnalyticsResponse(BaseModel):
     total_spent: float
     average_daily: float
@@ -71,35 +81,52 @@ class BudgetAlert(BaseModel):
     percentage: float
     alert_level: str
 
-def load_expenses():
-    """Load expenses from JSON file"""
+def load_data(filename):
+    """Load data from JSON file"""
     try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
                 return json.load(f)
-        return []
+        return {}
     except Exception as e:
-        print(f"Error loading expenses: {e}")
-        return []
+        print(f"Error loading {filename}: {e}")
+        return {}
 
-def save_expenses(expenses):
-    """Save expenses to JSON file"""
+def save_data(filename, data):
+    """Save data to JSON file"""
     try:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(expenses, f, indent=2)
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
         return True
     except Exception as e:
-        print(f"Error saving expenses: {e}")
+        print(f"Error saving {filename}: {e}")
         return False
 
-def get_expenses():
-    """Get all expenses"""
-    return load_expenses()
+def get_expenses(user_id="default"):
+    """Get all expenses for a user"""
+    data = load_data(DATA_FILE)
+    return data.get(user_id, [])
 
-def initialize_sample_data():
+def save_user_expenses(user_id, expenses):
+    """Save expenses for a user"""
+    data = load_data(DATA_FILE)
+    data[user_id] = expenses
+    return save_data(DATA_FILE, data)
+
+def get_users():
+    """Get all users"""
+    return load_data(USERS_FILE)
+
+def save_user(user_data):
+    """Save user data"""
+    users = get_users()
+    users[user_data["id"]] = user_data
+    return save_data(USERS_FILE, users)
+
+def initialize_sample_data(user_id="default"):
     """Initialize sample data for Chennai computer science student"""
     try:
-        existing_expenses = get_expenses()
+        existing_expenses = get_expenses(user_id)
         if len(existing_expenses) > 5:  # If already has data, don't insert
             print(f"Already have {len(existing_expenses)} expenses, skipping sample data")
             return
@@ -108,7 +135,7 @@ def initialize_sample_data():
         sample_expenses = generate_sample_data()
         
         all_expenses = existing_expenses + sample_expenses
-        save_expenses(all_expenses)
+        save_user_expenses(user_id, all_expenses)
             
         print(f"✅ Sample data initialized successfully with {len(sample_expenses)} expenses")
     except Exception as e:
@@ -264,10 +291,10 @@ def read_root():
     }
 
 @app.post("/expenses/", response_model=Expense)
-def create_expense(expense: ExpenseCreate):
+def create_expense(expense: ExpenseCreate, user_id: str = "default"):
     """Create a new expense with enhanced fields"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         
         expense_data = expense.dict()
         expense_data["id"] = str(uuid.uuid4())
@@ -276,7 +303,7 @@ def create_expense(expense: ExpenseCreate):
         
         expenses.append(expense_data)
         
-        if save_expenses(expenses):
+        if save_user_expenses(user_id, expenses):
             return expense_data
         else:
             raise HTTPException(status_code=500, detail="Failed to save expense")
@@ -285,6 +312,7 @@ def create_expense(expense: ExpenseCreate):
 
 @app.get("/expenses/", response_model=List[Expense])
 def read_expenses(
+    user_id: str = "default",
     category: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -292,13 +320,24 @@ def read_expenses(
     max_amount: Optional[float] = None,
     priority: Optional[str] = None,
     tags: Optional[str] = None,
+    search: Optional[str] = None,
     skip: int = 0,
     limit: int = 1000
 ):
     """Get expenses with advanced filtering"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         filtered_expenses = expenses
+        
+        # Apply search filter
+        if search:
+            search_lower = search.lower()
+            filtered_expenses = [
+                exp for exp in filtered_expenses 
+                if search_lower in exp["description"].lower() 
+                or search_lower in exp["category"].lower()
+                or any(search_lower in tag.lower() for tag in exp.get("tags", []))
+            ]
         
         # Apply filters
         if category and category != "All":
@@ -326,6 +365,9 @@ def read_expenses(
                 if any(tag in [t.lower() for t in exp.get("tags", [])] for tag in tag_list)
             ]
         
+        # Sort by date descending (newest first)
+        filtered_expenses.sort(key=lambda x: x["date"], reverse=True)
+        
         # Apply pagination
         end_index = skip + limit
         return filtered_expenses[skip:end_index]
@@ -333,10 +375,10 @@ def read_expenses(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/expenses/{expense_id}", response_model=Expense)
-def read_expense(expense_id: str):
+def read_expense(expense_id: str, user_id: str = "default"):
     """Get a specific expense by ID"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         for expense in expenses:
             if expense["id"] == expense_id:
                 return expense
@@ -345,17 +387,17 @@ def read_expense(expense_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/expenses/{expense_id}", response_model=Expense)
-def update_expense(expense_id: str, expense_update: ExpenseUpdate):
+def update_expense(expense_id: str, expense_update: ExpenseUpdate, user_id: str = "default"):
     """Update an existing expense"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         for expense in expenses:
             if expense["id"] == expense_id:
                 update_data = expense_update.dict(exclude_unset=True)
                 update_data["updated_at"] = datetime.now().isoformat()
                 expense.update(update_data)
                 
-                if save_expenses(expenses):
+                if save_user_expenses(user_id, expenses):
                     return expense
                 else:
                     raise HTTPException(status_code=500, detail="Failed to update expense")
@@ -365,14 +407,14 @@ def update_expense(expense_id: str, expense_update: ExpenseUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/expenses/{expense_id}")
-def delete_expense(expense_id: str):
+def delete_expense(expense_id: str, user_id: str = "default"):
     """Delete an expense by ID"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         for i, expense in enumerate(expenses):
             if expense["id"] == expense_id:
                 deleted_expense = expenses.pop(i)
-                if save_expenses(expenses):
+                if save_user_expenses(user_id, expenses):
                     return {"message": "Expense deleted successfully", "deleted_expense": deleted_expense}
                 else:
                     raise HTTPException(status_code=500, detail="Failed to delete expense")
@@ -383,12 +425,13 @@ def delete_expense(expense_id: str):
 
 @app.get("/analytics/overview")
 def get_analytics_overview(
+    user_id: str = "default",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
     """Get comprehensive analytics"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         
         # Apply date filter
         if start_date:
@@ -539,10 +582,10 @@ def get_analytics_overview(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/budgets/alerts")
-def get_budget_alerts():
+def get_budget_alerts(user_id: str = "default"):
     """Get budget alerts based on spending patterns"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         current_month = datetime.now().strftime("%Y-%m")
         
         # Simple budget logic
@@ -595,13 +638,14 @@ def get_budget_alerts():
 
 @app.get("/reports/export")
 def export_expenses_report(
+    user_id: str = "default",
     format: str = "json",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
     """Export expenses in different formats"""
     try:
-        expenses = get_expenses()
+        expenses = get_expenses(user_id)
         
         # Apply date filter
         if start_date:
@@ -635,11 +679,72 @@ def export_expenses_report(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/sample-data/initialize")
-def initialize_sample_data_endpoint():
+def initialize_sample_data_endpoint(user_id: str = "default"):
     """Initialize sample data endpoint"""
     try:
-        initialize_sample_data()
+        initialize_sample_data(user_id)
         return {"message": "Sample data initialized successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/users/register")
+def register_user(user: UserCreate):
+    """Register a new user"""
+    try:
+        users = get_users()
+        
+        # Check if user already exists
+        for existing_user in users.values():
+            if existing_user["phone_number"] == user.phone_number:
+                raise HTTPException(status_code=400, detail="User already exists")
+        
+        # Create new user
+        user_data = {
+            "id": str(uuid.uuid4()),
+            "phone_number": user.phone_number,
+            "password": user.password,  # In production, hash this password
+            "created_at": datetime.now().isoformat()
+        }
+        
+        if save_user(user_data):
+            # Initialize empty expenses for new user
+            save_user_expenses(user_data["id"], [])
+            return {"message": "User registered successfully", "user_id": user_data["id"]}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to register user")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/users/login")
+def login_user(user: UserCreate):
+    """Login user"""
+    try:
+        users = get_users()
+        
+        # Find user by phone number
+        for user_id, user_data in users.items():
+            if (user_data["phone_number"] == user.phone_number and 
+                user_data["password"] == user.password):
+                return {"message": "Login successful", "user_id": user_id}
+        
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/users/{user_id}")
+def get_user(user_id: str):
+    """Get user by ID"""
+    try:
+        users = get_users()
+        if user_id in users:
+            user_data = users[user_id].copy()
+            user_data.pop("password", None)  # Don't return password
+            return user_data
+        raise HTTPException(status_code=404, detail="User not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
