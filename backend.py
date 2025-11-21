@@ -1,6 +1,5 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -8,16 +7,11 @@ import uuid
 import os
 import json
 import random
-import zipfile
-import shutil
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
-    version="2.1.0",
-    description="A comprehensive expense tracking system with advanced analytics and password recovery"
+    version="2.0.0",
+    description="A comprehensive expense tracking system with advanced analytics"
 )
 
 # Add CORS middleware
@@ -26,14 +20,13 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 # Data storage files
 DATA_FILE = "expenses_data.json"
 USERS_FILE = "users_data.json"
 BUDGETS_FILE = "budgets_data.json"
-RESET_CODES_FILE = "reset_codes.json"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -69,17 +62,6 @@ class User(BaseModel):
     id: str
     phone_number: str
     created_at: str
-
-class ForgotPasswordRequest(BaseModel):
-    phone_number: str
-
-class ResetPasswordRequest(BaseModel):
-    phone_number: str
-    reset_code: str
-    new_password: str
-
-class ExportPasswordRequest(BaseModel):
-    password: str
 
 class AnalyticsResponse(BaseModel):
     total_spent: float
@@ -163,37 +145,6 @@ def save_budgets(data):
         print(f"Error saving {BUDGETS_FILE}: {e}")
         return False
 
-def load_reset_codes():
-    """Load reset codes from JSON file"""
-    try:
-        if os.path.exists(RESET_CODES_FILE):
-            with open(RESET_CODES_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        print(f"Error loading {RESET_CODES_FILE}: {e}")
-        return {}
-
-def save_reset_codes(data):
-    """Save reset codes to JSON file"""
-    try:
-        with open(RESET_CODES_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-        return True
-    except Exception as e:
-        print(f"Error saving {RESET_CODES_FILE}: {e}")
-        return False
-
-def generate_reset_code():
-    """Generate a 6-digit reset code"""
-    return str(random.randint(100000, 999999))
-
-def send_reset_code_sms(phone_number, code):
-    """Simulate sending reset code via SMS"""
-    print(f"SMS sent to {phone_number}: Your password reset code is {code}")
-    # In a real application, integrate with SMS service like Twilio
-    return True
-
 def initialize_sample_data(user_id="default"):
     """Initialize sample data for Chennai computer science student"""
     try:
@@ -201,10 +152,13 @@ def initialize_sample_data(user_id="default"):
         if len(existing_expenses) > 5:  # If already has data, don't insert
             print(f"Already have {len(existing_expenses)} expenses, skipping sample data")
             return
+        
         print("Initializing sample data...")
         sample_expenses = generate_sample_data()
+        
         all_expenses = existing_expenses + sample_expenses
         save_user_expenses(user_id, all_expenses)
+            
         print(f"✅ Sample data initialized successfully with {len(sample_expenses)} expenses")
     except Exception as e:
         print(f"❌ Error initializing sample data: {e}")
@@ -352,11 +306,10 @@ def generate_sample_data():
 def read_root():
     return {
         "message": "Enhanced Expense Tracker API is running",
-        "version": "2.1.0",
+        "version": "2.0.0",
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
-        "status": "healthy",
-        "features": ["password_recovery", "data_export", "analytics"]
+        "status": "healthy"
     }
 
 @app.post("/expenses/", response_model=Expense)
@@ -364,11 +317,14 @@ def create_expense(expense: ExpenseCreate, user_id: str = "default"):
     """Create a new expense with enhanced fields"""
     try:
         expenses = get_expenses(user_id)
+        
         expense_data = expense.dict()
         expense_data["id"] = str(uuid.uuid4())
         expense_data["created_at"] = datetime.now().isoformat()
         expense_data["updated_at"] = datetime.now().isoformat()
+        
         expenses.append(expense_data)
+        
         if save_user_expenses(user_id, expenses):
             return expense_data
         else:
@@ -399,8 +355,8 @@ def read_expenses(
         if search:
             search_lower = search.lower()
             filtered_expenses = [
-                exp for exp in filtered_expenses
-                if search_lower in exp["description"].lower()
+                exp for exp in filtered_expenses 
+                if search_lower in exp["description"].lower() 
                 or search_lower in exp["category"].lower()
                 or any(search_lower in tag.lower() for tag in exp.get("tags", []))
             ]
@@ -427,7 +383,7 @@ def read_expenses(
         if tags:
             tag_list = [tag.strip().lower() for tag in tags.split(",")]
             filtered_expenses = [
-                exp for exp in filtered_expenses
+                exp for exp in filtered_expenses 
                 if any(tag in [t.lower() for t in exp.get("tags", [])] for tag in tag_list)
             ]
         
@@ -437,7 +393,6 @@ def read_expenses(
         # Apply pagination
         end_index = skip + limit
         return filtered_expenses[skip:end_index]
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -463,10 +418,12 @@ def update_expense(expense_id: str, expense_update: ExpenseUpdate, user_id: str 
                 update_data = expense_update.dict(exclude_unset=True)
                 update_data["updated_at"] = datetime.now().isoformat()
                 expense.update(update_data)
+                
                 if save_user_expenses(user_id, expenses):
                     return expense
                 else:
                     raise HTTPException(status_code=500, detail="Failed to update expense")
+        
         raise HTTPException(status_code=404, detail="Expense not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -483,6 +440,7 @@ def delete_expense(expense_id: str, user_id: str = "default"):
                     return {"message": "Expense deleted successfully", "deleted_expense": deleted_expense}
                 else:
                     raise HTTPException(status_code=500, detail="Failed to delete expense")
+        
         raise HTTPException(status_code=404, detail="Expense not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -546,20 +504,26 @@ def get_analytics_overview(
             except:
                 continue
         
-        monthly_trend = [{"month": month, "amount": amount} for month, amount in sorted(monthly_data.items())]
+        monthly_trend = [{"month": month, "amount": amount} for month, amount in monthly_data.items()]
         
-        # Weekly spending
-        weekly_data = {}
-        for exp in expenses:
-            try:
-                date = datetime.fromisoformat(exp["date"])
-                week_key = date.strftime("%Y-W%W")
-                weekly_data[week_key] = weekly_data.get(week_key, 0) + float(exp["amount"])
-            except:
-                continue
-        
-        sorted_weeks = sorted(weekly_data.items())[-8:]  # Last 8 weeks
-        weekly_spending = [{"week": week, "amount": amount} for week, amount in sorted_weeks]
+        # Weekly spending (last 8 weeks)
+        weekly_data = []
+        try:
+            end_date_obj = max_date if 'max_date' in locals() else datetime.now()
+            for i in range(8):
+                week_start = end_date_obj - timedelta(days=end_date_obj.weekday() + 7*i)
+                week_end = week_start + timedelta(days=6)
+                week_amount = sum(
+                    float(exp["amount"]) for exp in expenses
+                    if week_start.date().isoformat() <= exp["date"] <= week_end.date().isoformat()
+                )
+                weekly_data.append({
+                    "week": week_start.strftime("%Y-%m-%d"),
+                    "amount": week_amount
+                })
+            weekly_data.reverse()
+        except:
+            weekly_data = []
         
         # Priority distribution
         priority_distribution = {}
@@ -568,57 +532,203 @@ def get_analytics_overview(
             priority_distribution[priority] = priority_distribution.get(priority, 0) + float(exp["amount"])
         
         # Top expenses
-        sorted_expenses = sorted(expenses, key=lambda x: float(x["amount"]), reverse=True)
-        top_expenses = sorted_expenses[:10]
+        try:
+            top_expenses = sorted(expenses, key=lambda x: float(x["amount"]), reverse=True)[:10]
+        except:
+            top_expenses = []
         
-        # Daily pattern
+        # Daily pattern (spending by day of week)
         daily_pattern = {}
-        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         for exp in expenses:
             try:
                 date = datetime.fromisoformat(exp["date"])
-                day = day_names[date.weekday()]
-                daily_pattern[day] = daily_pattern.get(day, 0) + float(exp["amount"])
+                day_name = date.strftime("%A")
+                daily_pattern[day_name] = daily_pattern.get(day_name, 0) + float(exp["amount"])
             except:
                 continue
         
-        # Spending velocity
-        if len(weekly_spending) >= 2:
-            current_week = weekly_spending[-1]["amount"]
-            previous_week = weekly_spending[-2]["amount"]
-            change = ((current_week - previous_week) / previous_week * 100) if previous_week > 0 else 0
+        # Spending velocity (last 7 days vs previous 7 days)
+        try:
+            today = datetime.now().date()
+            last_7_days_start = today - timedelta(days=7)
+            previous_7_days_start = last_7_days_start - timedelta(days=7)
+            
+            last_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if last_7_days_start.isoformat() <= exp["date"] <= today.isoformat()
+            )
+            
+            previous_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if previous_7_days_start.isoformat() <= exp["date"] < last_7_days_start.isoformat()
+            )
+            
             spending_velocity = {
-                "current_week": current_week,
-                "previous_week": previous_week,
-                "change_percentage": change
+                "current_week": last_7_days_spent,
+                "previous_week": previous_7_days_spent,
+                "change_percentage": ((last_7_days_spent - previous_7_days_spent) / previous_7_days_spent * 100) if previous_7_days_spent > 0 else 0
             }
-        else:
-            spending_velocity = {"current_week": 0, "previous_week": 0, "change_percentage": 0}
+        except:
+            spending_velocity = {
+                "current_week": 0,
+                "previous_week": 0,
+                "change_percentage": 0
+            }
         
-        # Savings rate (assuming 20000 monthly income for student)
-        monthly_income = 20000
-        monthly_avg_spent = total_spent / max(len(monthly_data), 1)
-        savings_rate = ((monthly_income - monthly_avg_spent) / monthly_income * 100) if monthly_income > 0 else 0
+        # Savings rate (assuming monthly income of 15000 INR for student)
+        try:
+            monthly_income = 15000
+            current_month = datetime.now().strftime("%Y-%m")
+            current_month_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if exp["date"].startswith(current_month)
+            )
+            savings_rate = max(0, ((monthly_income - current_month_spent) / monthly_income * 100)) if monthly_income > 0 else 0
+        except:
+            savings_rate = 0
         
-        return {
-            "total_spent": total_spent,
-            "average_daily": average_daily,
-            "category_breakdown": category_breakdown,
-            "monthly_trend": monthly_trend,
-            "weekly_spending": weekly_spending,
-            "priority_distribution": priority_distribution,
-            "top_expenses": top_expenses,
-            "daily_pattern": daily_pattern,
-            "spending_velocity": spending_velocity,
-            "savings_rate": max(0, savings_rate)
+        return AnalyticsResponse(
+            total_spent=total_spent,
+            average_daily=average_daily,
+            category_breakdown=category_breakdown,
+            monthly_trend=monthly_trend,
+            weekly_spending=weekly_data,
+            priority_distribution=priority_distribution,
+            top_expenses=top_expenses,
+            daily_pattern=daily_pattern,
+            spending_velocity=spending_velocity,
+            savings_rate=savings_rate
+        ).dict()
+    except Exception as e:
+        print(f"Error in analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/budgets/alerts")
+def get_budget_alerts(user_id: str = "default"):
+    """Get budget alerts based on spending patterns"""
+    try:
+        expenses = get_expenses(user_id)
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        # Simple budget logic
+        monthly_expenses = {}
+        for exp in expenses:
+            if exp["date"].startswith(current_month):
+                category = exp["category"]
+                monthly_expenses[category] = monthly_expenses.get(category, 0) + float(exp["amount"])
+        
+        # Get user budgets, else use default budgets
+        user_budgets = load_budgets().get(user_id, {})
+        default_budgets = {
+            "Food & Dining": 6000,
+            "Transportation": 2000,
+            "Entertainment": 1500,
+            "Utilities": 1500,
+            "Shopping": 2000,
+            "Healthcare": 1000,
+            "Travel": 3000,
+            "Education": 3000,
+            "Housing": 8000,
+            "Other": 2000
         }
-    
+        
+        # Merge: user budgets override default budgets
+        budgets = {**default_budgets, **user_budgets}
+        
+        alerts = []
+        for category, spent in monthly_expenses.items():
+            budget = budgets.get(category, 5000)  # If category not in budgets, use 5000 as default
+            percentage = (spent / budget) * 100 if budget > 0 else 0
+            
+            if percentage >= 90:
+                alert_level = "Critical"
+            elif percentage >= 75:
+                alert_level = "Warning"
+            elif percentage >= 50:
+                alert_level = "Info"
+            else:
+                continue
+            
+            alerts.append({
+                "category": category,
+                "spent": spent,
+                "budget": budget,
+                "percentage": percentage,
+                "alert_level": alert_level
+            })
+        
+        return alerts
+    except Exception as e:
+        print(f"Error in budget alerts: {e}")
+        return []
+
+@app.post("/budgets/{user_id}")
+def save_user_budgets(user_id: str, budgets: Dict[str, float]):
+    """Save budgets for a user"""
+    try:
+        data = load_budgets()
+        data[user_id] = budgets
+        if save_budgets(data):
+            return {"message": "Budgets saved successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save budgets")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/budgets/{user_id}")
+def get_user_budgets(user_id: str):
+    """Get budgets for a user"""
+    try:
+        data = load_budgets()
+        return data.get(user_id, {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/reports/export")
+def export_expenses_report(
+    user_id: str = "default",
+    format: str = "json",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Export expenses in different formats"""
+    try:
+        expenses = get_expenses(user_id)
+        
+        # Apply date filter
+        if start_date:
+            expenses = [exp for exp in expenses if exp["date"] >= start_date]
+        if end_date:
+            expenses = [exp for exp in expenses if exp["date"] <= end_date]
+        
+        if format == "json":
+            return expenses
+        elif format == "csv":
+            # Enhanced CSV format with all fields
+            csv_lines = ["ID,Date,Category,Description,Amount,Priority,Tags,Notes"]
+            for exp in expenses:
+                tags = exp.get("tags", [])
+                if isinstance(tags, str):
+                    tags_str = tags
+                else:
+                    tags_str = ";".join(tags) if tags else ""
+                
+                notes_str = str(exp.get("notes", "")).replace('"', '""')
+                description_str = str(exp.get("description", "")).replace('"', '""')
+                csv_lines.append(
+                    f'{exp["id"]},{exp["date"]},{exp["category"]},'
+                    f'"{description_str}",{exp["amount"]},{exp.get("priority", "Medium")},'
+                    f'"{tags_str}","{notes_str}"'
+                )
+            return {"csv": "\n".join(csv_lines)}
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/sample-data/initialize")
-def init_sample_data(user_id: str = "default"):
-    """Initialize sample data for user"""
+def initialize_sample_data_endpoint(user_id: str = "default"):
+    """Initialize sample data endpoint"""
     try:
         initialize_sample_data(user_id)
         return {"message": "Sample data initialized successfully"}
@@ -631,25 +741,25 @@ def register_user(user: UserCreate):
     try:
         users = get_users()
         
-        # Check if phone number already exists
-        for user_data in users.values():
-            if user_data["phone_number"] == user.phone_number:
-                raise HTTPException(status_code=400, detail="Phone number already registered")
+        # Check if user already exists
+        for existing_user in users.values():
+            if existing_user["phone_number"] == user.phone_number:
+                raise HTTPException(status_code=400, detail="User already exists")
         
         # Create new user
-        user_id = str(uuid.uuid4())
         user_data = {
-            "id": user_id,
+            "id": str(uuid.uuid4()),
             "phone_number": user.phone_number,
-            "password": user.password,
+            "password": user.password,  # In production, hash this password
             "created_at": datetime.now().isoformat()
         }
         
         if save_user(user_data):
-            return {"message": "User registered successfully", "user_id": user_id}
+            # Initialize empty expenses for new user
+            save_user_expenses(user_data["id"], [])
+            return {"message": "User registered successfully", "user_id": user_data["id"]}
         else:
             raise HTTPException(status_code=500, detail="Failed to register user")
-    
     except HTTPException:
         raise
     except Exception as e:
@@ -663,12 +773,11 @@ def login_user(user: UserCreate):
         
         # Find user by phone number
         for user_id, user_data in users.items():
-            if (user_data["phone_number"] == user.phone_number and
+            if (user_data["phone_number"] == user.phone_number and 
                 user_data["password"] == user.password):
                 return {"message": "Login successful", "user_id": user_id}
         
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
     except HTTPException:
         raise
     except Exception as e:
@@ -684,151 +793,6 @@ def get_user(user_id: str):
             user_data.pop("password", None)  # Don't return password
             return user_data
         raise HTTPException(status_code=404, detail="User not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/users/forgot-password")
-def forgot_password(request: ForgotPasswordRequest):
-    """Request password reset code"""
-    try:
-        users = get_users()
-        
-        # Find user by phone number
-        user_found = None
-        for user_id, user_data in users.items():
-            if user_data["phone_number"] == request.phone_number:
-                user_found = user_data
-                break
-        
-        if not user_found:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Generate reset code
-        reset_code = generate_reset_code()
-        reset_codes = load_reset_codes()
-        
-        # Store reset code with expiration (10 minutes)
-        reset_codes[request.phone_number] = {
-            "code": reset_code,
-            "expires_at": (datetime.now() + timedelta(minutes=10)).isoformat(),
-            "user_id": user_found["id"]
-        }
-        
-        save_reset_codes(reset_codes)
-        
-        # Send reset code (simulated)
-        send_reset_code_sms(request.phone_number, reset_code)
-        
-        return {
-            "message": "Reset code sent successfully",
-            "code": reset_code,  # Remove this in production
-            "expires_in": "10 minutes"
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/users/reset-password")
-def reset_password(request: ResetPasswordRequest):
-    """Reset password using reset code"""
-    try:
-        reset_codes = load_reset_codes()
-        
-        if request.phone_number not in reset_codes:
-            raise HTTPException(status_code=400, detail="Invalid reset code")
-        
-        reset_data = reset_codes[request.phone_number]
-        
-        # Check if code matches
-        if reset_data["code"] != request.reset_code:
-            raise HTTPException(status_code=400, detail="Invalid reset code")
-        
-        # Check if code expired
-        expires_at = datetime.fromisoformat(reset_data["expires_at"])
-        if datetime.now() > expires_at:
-            del reset_codes[request.phone_number]
-            save_reset_codes(reset_codes)
-            raise HTTPException(status_code=400, detail="Reset code expired")
-        
-        # Update user password
-        users = get_users()
-        user_id = reset_data["user_id"]
-        
-        if user_id not in users:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        users[user_id]["password"] = request.new_password
-        save_data(USERS_FILE, users)
-        
-        # Remove used reset code
-        del reset_codes[request.phone_number]
-        save_reset_codes(reset_codes)
-        
-        return {"message": "Password reset successfully"}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/users/{user_id}/export-all-data")
-def export_all_data(user_id: str, request: ExportPasswordRequest):
-    """Export all user data as ZIP file"""
-    try:
-        # Verify password
-        if request.password != "2139":
-            raise HTTPException(status_code=401, detail="Invalid export password")
-        
-        # Get all user data
-        expenses = get_expenses(user_id)
-        budgets = load_budgets().get(user_id, {})
-        users = get_users()
-        user_data = users.get(user_id, {})
-        
-        # Remove password from user data
-        if user_data:
-            user_data = user_data.copy()
-            user_data.pop("password", None)
-        
-        # Create temporary directory
-        temp_dir = f"temp_export_{user_id}_{uuid.uuid4().hex}"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Save data to files
-        with open(f"{temp_dir}/expenses.json", "w") as f:
-            json.dump(expenses, f, indent=2)
-        
-        with open(f"{temp_dir}/budgets.json", "w") as f:
-            json.dump(budgets, f, indent=2)
-        
-        with open(f"{temp_dir}/user_profile.json", "w") as f:
-            json.dump(user_data, f, indent=2)
-        
-        # Create analytics summary
-        analytics = get_analytics_overview(user_id)
-        with open(f"{temp_dir}/analytics_summary.json", "w") as f:
-            json.dump(analytics, f, indent=2)
-        
-        # Create ZIP file
-        zip_filename = f"{temp_dir}_export.zip"
-        with zipfile.ZipFile(zip_filename, 'w') as zipf:
-            for file in ["expenses.json", "budgets.json", "user_profile.json", "analytics_summary.json"]:
-                zipf.write(f"{temp_dir}/{file}", file)
-        
-        # Clean up temporary directory
-        shutil.rmtree(temp_dir)
-        
-        # Return ZIP file
-        return FileResponse(
-            path=zip_filename,
-            filename=f"expense_tracker_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-            media_type='application/zip'
-        )
-    
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
