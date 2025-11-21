@@ -406,125 +406,147 @@ class EnhancedExpenseTracker:
                 st.dataframe(top_df, use_container_width=True)
         else:
             st.info("No expense data available")
-    
+
     def render_add_expense(self):
-        """Render enhanced expense addition form - COMPLETELY FIXED VERSION"""
+        """Render enhanced expense addition form - COMPLETELY FIXED"""
         st.header("➕ Add New Expense - INR")
         
         # Check if we're in edit mode
         is_edit = st.session_state.edit_expense is not None
         expense_data = st.session_state.edit_expense or {}
         
-        # Create a simple form without complex parameters that might cause issues
-        form_key = "edit_expense_form" if is_edit else "add_expense_form"
+        # Use a simple form approach - Streamlit forms must be very basic
+        st.subheader("Expense Details")
         
-        with st.form(key=form_key):
-            col1, col2 = st.columns(2)
+        # Create form columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            description = st.text_input(
+                "Description *", 
+                value=expense_data.get('description', ''),
+                placeholder="e.g., Dinner at Restaurant",
+                help="Enter a clear description of the expense"
+            )
             
-            with col1:
-                description = st.text_input(
-                    "Description *", 
-                    value=expense_data.get('description', ''),
-                    placeholder="e.g., Dinner at Restaurant",
-                    help="Enter a clear description of the expense"
-                )
-                amount = st.number_input(
-                    f"Amount ({CURRENCY}) *", 
-                    min_value=0.01, 
-                    step=1.0, 
-                    format="%.2f",
-                    value=float(expense_data.get('amount', 0.0)),
-                    help="Enter the expense amount"
-                )
-                category = st.selectbox(
-                    "Category *",
-                    options=[
-                        "Food & Dining", "Transportation", "Entertainment", 
-                        "Utilities", "Shopping", "Healthcare", 
-                        "Travel", "Education", "Housing", "Other"
-                    ],
-                    index=0 if not expense_data.get('category') else [
-                        "Food & Dining", "Transportation", "Entertainment", 
-                        "Utilities", "Shopping", "Healthcare", 
-                        "Travel", "Education", "Housing", "Other"
-                    ].index(expense_data.get('category', 'Food & Dining'))
-                )
+            # Fix: Ensure amount is always a valid float
+            try:
+                amount_value = float(expense_data.get('amount', 0.0))
+            except (TypeError, ValueError):
+                amount_value = 0.0
+                
+            amount = st.number_input(
+                f"Amount ({CURRENCY}) *", 
+                min_value=0.01, 
+                step=1.0,
+                value=amount_value,
+                help="Enter the expense amount"
+            )
             
-            with col2:
-                default_date = datetime.fromisoformat(expense_data.get('date', datetime.now().isoformat())) if expense_data.get('date') else datetime.now()
-                date = st.date_input("Date *", value=default_date)
-                priority = st.selectbox(
-                    "Priority",
-                    options=["Low", "Medium", "High"],
-                    index=["Low", "Medium", "High"].index(expense_data.get('priority', 'Medium')),
-                    help="How essential was this expense?"
-                )
-                tags_default = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
-                tags = st.text_input(
-                    "Tags (comma separated)",
-                    value=tags_default,
-                    placeholder="restaurant, business, luxury",
-                    help="Add tags for better categorization"
-                )
-                notes = st.text_area(
-                    "Notes", 
-                    value=expense_data.get('notes', ''),
-                    placeholder="Additional details about this expense...",
-                    height=100
-                )
-            
-            # CRITICAL FIX: Proper submit button inside form
-            submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
-            submitted = st.form_submit_button(submit_text, use_container_width=True)
-            
-            # Handle form submission INSIDE the form context
-            if submitted:
-                if not description or amount <= 0:
-                    st.error("Please fill all required fields (*)")
+            category = st.selectbox(
+                "Category *",
+                options=[
+                    "Food & Dining", "Transportation", "Entertainment", 
+                    "Utilities", "Shopping", "Healthcare", 
+                    "Travel", "Education", "Housing", "Other"
+                ],
+                index=0 if not expense_data.get('category') else [
+                    "Food & Dining", "Transportation", "Entertainment", 
+                    "Utilities", "Shopping", "Healthcare", 
+                    "Travel", "Education", "Housing", "Other"
+                ].index(expense_data.get('category', 'Food & Dining'))
+            )
+        
+        with col2:
+            # Fix: Handle date parsing safely
+            try:
+                if expense_data.get('date'):
+                    default_date = datetime.fromisoformat(expense_data['date']).date()
                 else:
-                    expense_payload = {
-                        "description": description,
-                        "amount": float(amount),
-                        "category": category,
-                        "date": date.isoformat(),
-                        "priority": priority,
-                        "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
-                        "notes": notes if notes else None
-                    }
-                    
-                    try:
-                        if is_edit:
-                            # Update existing expense
-                            response = requests.put(
-                                f"{self.backend_url}/expenses/{expense_data['id']}",
-                                params={"user_id": st.session_state.user_id},
-                                json=expense_payload,
-                                timeout=10
-                            )
-                            success_message = "✅ Expense updated successfully!"
-                        else:
-                            # Create new expense
-                            response = requests.post(
-                                f"{self.backend_url}/expenses/",
-                                params={"user_id": st.session_state.user_id},
-                                json=expense_payload,
-                                timeout=10
-                            )
-                            success_message = "✅ Expense added successfully!"
-                        
-                        if response.status_code == 200:
-                            st.success(success_message)
-                            st.balloons()
-                            # Clear edit mode
-                            st.session_state.edit_expense = None
-                            st.rerun()
-                        else:
-                            error_detail = response.json().get('detail', 'Unknown error')
-                            st.error(f"❌ Error: {error_detail}")
-                    except Exception as e:
-                        st.error(f"🚫 Failed to connect to backend: {e}")
+                    default_date = datetime.now().date()
+            except:
+                default_date = datetime.now().date()
+                
+            date = st.date_input("Date *", value=default_date)
+            
+            priority = st.selectbox(
+                "Priority",
+                options=["Low", "Medium", "High"],
+                index=["Low", "Medium", "High"].index(expense_data.get('priority', 'Medium')),
+                help="How essential was this expense?"
+            )
+            
+            tags_default = ", ".join(expense_data.get('tags', [])) if expense_data.get('tags') else ""
+            tags = st.text_input(
+                "Tags (comma separated)",
+                value=tags_default,
+                placeholder="restaurant, business, luxury",
+                help="Add tags for better categorization"
+            )
+            
+            notes = st.text_area(
+                "Notes", 
+                value=expense_data.get('notes', ''),
+                placeholder="Additional details about this expense...",
+                height=100
+            )
         
-        # Add cancel button in edit mode (outside form)
+        # CRITICAL FIX: Use a regular button instead of form submit button
+        # This avoids the Streamlit form restrictions entirely
+        submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            submitted = st.button(submit_text, use_container_width=True, type="primary")
+        
+        # Handle form submission
+        if submitted:
+            if not description or amount <= 0:
+                st.error("Please fill all required fields (*)")
+            else:
+                expense_payload = {
+                    "description": description,
+                    "amount": float(amount),
+                    "category": category,
+                    "date": date.isoformat(),
+                    "priority": priority,
+                    "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+                    "notes": notes if notes else None
+                }
+                
+                try:
+                    if is_edit:
+                        # Update existing expense
+                        response = requests.put(
+                            f"{self.backend_url}/expenses/{expense_data['id']}",
+                            params={"user_id": st.session_state.user_id},
+                            json=expense_payload,
+                            timeout=10
+                        )
+                        success_message = "✅ Expense updated successfully!"
+                    else:
+                        # Create new expense
+                        response = requests.post(
+                            f"{self.backend_url}/expenses/",
+                            params={"user_id": st.session_state.user_id},
+                            json=expense_payload,
+                            timeout=10
+                        )
+                        success_message = "✅ Expense added successfully!"
+                    
+                    if response.status_code == 200:
+                        st.success(success_message)
+                        st.balloons()
+                        # Clear edit mode and rerun
+                        st.session_state.edit_expense = None
+                        st.rerun()
+                    else:
+                        error_detail = response.json().get('detail', 'Unknown error')
+                        st.error(f"❌ Error: {error_detail}")
+                except Exception as e:
+                    st.error(f"🚫 Failed to connect to backend: {e}")
+        
+        # Add cancel button in edit mode
         if is_edit:
             if st.button("❌ Cancel Edit", use_container_width=True):
                 st.session_state.edit_expense = None
