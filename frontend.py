@@ -8,7 +8,7 @@ import json
 import os
 
 # Configuration - Use environment variable for backend URL
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 CURRENCY = "₹"  # Indian Rupee
 
 class EnhancedExpenseTracker:
@@ -408,15 +408,17 @@ class EnhancedExpenseTracker:
             st.info("No expense data available")
     
     def render_add_expense(self):
-        """Render enhanced expense addition form - FIXED VERSION"""
+        """Render enhanced expense addition form - COMPLETELY FIXED VERSION"""
         st.header("➕ Add New Expense - INR")
         
         # Check if we're in edit mode
         is_edit = st.session_state.edit_expense is not None
         expense_data = st.session_state.edit_expense or {}
         
-        # Create form - FIXED: Simplified form structure
-        with st.form(key="add_expense_form"):
+        # Create a simple form without complex parameters that might cause issues
+        form_key = "edit_expense_form" if is_edit else "add_expense_form"
+        
+        with st.form(key=form_key):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -471,56 +473,56 @@ class EnhancedExpenseTracker:
                     height=100
                 )
             
-            # FIXED: Submit button must be inside the form and properly placed
+            # CRITICAL FIX: Proper submit button inside form
             submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
             submitted = st.form_submit_button(submit_text, use_container_width=True)
             
-        # Handle form submission outside the form context to avoid Streamlit issues
-        if submitted:
-            if not description or amount <= 0:
-                st.error("Please fill all required fields (*)")
-            else:
-                expense_payload = {
-                    "description": description,
-                    "amount": float(amount),
-                    "category": category,
-                    "date": date.isoformat(),
-                    "priority": priority,
-                    "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
-                    "notes": notes if notes else None
-                }
-                
-                try:
-                    if is_edit:
-                        # Update existing expense
-                        response = requests.put(
-                            f"{self.backend_url}/expenses/{expense_data['id']}",
-                            params={"user_id": st.session_state.user_id},
-                            json=expense_payload,
-                            timeout=10
-                        )
-                        success_message = "✅ Expense updated successfully!"
-                    else:
-                        # Create new expense
-                        response = requests.post(
-                            f"{self.backend_url}/expenses/",
-                            params={"user_id": st.session_state.user_id},
-                            json=expense_payload,
-                            timeout=10
-                        )
-                        success_message = "✅ Expense added successfully!"
+            # Handle form submission INSIDE the form context
+            if submitted:
+                if not description or amount <= 0:
+                    st.error("Please fill all required fields (*)")
+                else:
+                    expense_payload = {
+                        "description": description,
+                        "amount": float(amount),
+                        "category": category,
+                        "date": date.isoformat(),
+                        "priority": priority,
+                        "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+                        "notes": notes if notes else None
+                    }
                     
-                    if response.status_code == 200:
-                        st.success(success_message)
-                        st.balloons()
-                        # Clear edit mode
-                        st.session_state.edit_expense = None
-                        st.rerun()
-                    else:
-                        error_detail = response.json().get('detail', 'Unknown error')
-                        st.error(f"❌ Error: {error_detail}")
-                except Exception as e:
-                    st.error(f"🚫 Failed to connect to backend: {e}")
+                    try:
+                        if is_edit:
+                            # Update existing expense
+                            response = requests.put(
+                                f"{self.backend_url}/expenses/{expense_data['id']}",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense updated successfully!"
+                        else:
+                            # Create new expense
+                            response = requests.post(
+                                f"{self.backend_url}/expenses/",
+                                params={"user_id": st.session_state.user_id},
+                                json=expense_payload,
+                                timeout=10
+                            )
+                            success_message = "✅ Expense added successfully!"
+                        
+                        if response.status_code == 200:
+                            st.success(success_message)
+                            st.balloons()
+                            # Clear edit mode
+                            st.session_state.edit_expense = None
+                            st.rerun()
+                        else:
+                            error_detail = response.json().get('detail', 'Unknown error')
+                            st.error(f"❌ Error: {error_detail}")
+                    except Exception as e:
+                        st.error(f"🚫 Failed to connect to backend: {e}")
         
         # Add cancel button in edit mode (outside form)
         if is_edit:
