@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
 import os
+import time
+import base64
 
 # Configuration - Use environment variable for backend URL
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
@@ -52,6 +54,22 @@ class EnhancedExpenseTracker:
             border-left: 5px solid #1f77b4;
         }
         
+        /* Loading spinner */
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         /* Responsive design */
         @media (max-width: 768px) {
             .main-header {
@@ -74,10 +92,46 @@ class EnhancedExpenseTracker:
             color: #666;
             font-size: 0.9rem;
         }
+        
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            color: white;
+            z-index: 1000;
+            animation: fadeIn 0.5s, fadeOut 0.5s 2.5s;
+        }
+        
+        .toast.success { background-color: #4CAF50; }
+        .toast.error { background-color: #f44336; }
+        .toast.warning { background-color: #ff9800; }
+        .toast.info { background-color: #2196F3; }
+        
+        @keyframes fadeIn {
+            from {opacity: 0;}
+            to {opacity: 1;}
+        }
+        
+        @keyframes fadeOut {
+            from {opacity: 1;}
+            to {opacity: 0;}
+        }
         </style>
         """, unsafe_allow_html=True)
         
         st.markdown(f'<h1 class="main-header">💸 Super Expense Tracker Pro - {CURRENCY}</h1>', unsafe_allow_html=True)
+    
+    def show_toast(self, message, type="info"):
+        """Show toast notification"""
+        st.markdown(f"""
+        <div class="toast {type}">
+            {message}
+        </div>
+        """, unsafe_allow_html=True)
+        time.sleep(0.1)  # Allow the toast to render
     
     def test_connection(self):
         """Test connection to backend"""
@@ -103,6 +157,22 @@ class EnhancedExpenseTracker:
             st.session_state.show_account_modal = False
         if 'search_query' not in st.session_state:
             st.session_state.search_query = ""
+        if 'show_forgot_password' not in st.session_state:
+            st.session_state.show_forgot_password = False
+        if 'show_reset_password' not in st.session_state:
+            st.session_state.show_reset_password = False
+        if 'reset_phone' not in st.session_state:
+            st.session_state.reset_phone = ""
+        if 'show_export_modal' not in st.session_state:
+            st.session_state.show_export_modal = False
+        if 'loading' not in st.session_state:
+            st.session_state.loading = False
+    
+    def set_loading(self, loading=True):
+        """Set loading state"""
+        st.session_state.loading = loading
+        if loading:
+            st.rerun()
     
     def render_footer(self):
         """Render footer with tech stack and copyright"""
@@ -113,6 +183,146 @@ class EnhancedExpenseTracker:
             <p>© 2024 Expense Tracker Pro. All rights reserved.</p>
         </div>
         """, unsafe_allow_html=True)
+    
+    def render_loading_spinner(self):
+        """Render loading spinner"""
+        if st.session_state.loading:
+            st.markdown("""
+            <div style="display: flex; justify-content: center; align-items: center; height: 200px;">
+                <div class="spinner"></div>
+            </div>
+            <p style="text-align: center;">Loading... Please wait</p>
+            """, unsafe_allow_html=True)
+    
+    def render_forgot_password_modal(self):
+        """Render forgot password modal"""
+        if st.session_state.show_forgot_password:
+            with st.container():
+                st.markdown("---")
+                st.subheader("🔑 Forgot Password")
+                
+                with st.form("forgot_password_form"):
+                    phone_number = st.text_input("Phone Number", placeholder="Enter your registered phone number")
+                    submit_forgot = st.form_submit_button("Send Reset Code")
+                    
+                    if submit_forgot:
+                        if len(phone_number) > 0:
+                            try:
+                                self.set_loading(True)
+                                response = requests.post(
+                                    f"{self.backend_url}/users/forgot-password",
+                                    json={"phone_number": phone_number}
+                                )
+                                if response.status_code == 200:
+                                    data = response.json()
+                                    st.session_state.reset_phone = phone_number
+                                    st.session_state.show_forgot_password = False
+                                    st.session_state.show_reset_password = True
+                                    self.show_toast("✅ Reset code sent successfully!", "success")
+                                    st.rerun()
+                                else:
+                                    self.show_toast("❌ Phone number not found", "error")
+                            except Exception as e:
+                                self.show_toast(f"❌ Error: {e}", "error")
+                            finally:
+                                self.set_loading(False)
+                        else:
+                            self.show_toast("❌ Please enter your phone number", "error")
+                
+                if st.button("Back to Login"):
+                    st.session_state.show_forgot_password = False
+                    st.rerun()
+    
+    def render_reset_password_modal(self):
+        """Render reset password modal"""
+        if st.session_state.show_reset_password:
+            with st.container():
+                st.markdown("---")
+                st.subheader("🔄 Reset Password")
+                
+                with st.form("reset_password_form"):
+                    st.info(f"Reset code sent to: {st.session_state.reset_phone}")
+                    reset_code = st.text_input("Reset Code", placeholder="Enter 6-digit code")
+                    new_password = st.text_input("New Password", type="password", placeholder="Enter new 6-digit password")
+                    confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm new password")
+                    submit_reset = st.form_submit_button("Reset Password")
+                    
+                    if submit_reset:
+                        if (len(reset_code) == 6 and len(new_password) == 6 and 
+                            new_password == confirm_password):
+                            try:
+                                self.set_loading(True)
+                                response = requests.post(
+                                    f"{self.backend_url}/users/reset-password",
+                                    json={
+                                        "phone_number": st.session_state.reset_phone,
+                                        "reset_code": reset_code,
+                                        "new_password": new_password
+                                    }
+                                )
+                                if response.status_code == 200:
+                                    st.session_state.show_reset_password = False
+                                    self.show_toast("✅ Password reset successfully!", "success")
+                                    st.rerun()
+                                else:
+                                    error_detail = response.json().get('detail', 'Invalid code')
+                                    self.show_toast(f"❌ {error_detail}", "error")
+                            except Exception as e:
+                                self.show_toast(f"❌ Error: {e}", "error")
+                            finally:
+                                self.set_loading(False)
+                        else:
+                            self.show_toast("❌ Please check: 6-digit code and matching passwords", "error")
+                
+                if st.button("Back"):
+                    st.session_state.show_reset_password = False
+                    st.session_state.show_forgot_password = True
+                    st.rerun()
+    
+    def render_export_modal(self):
+        """Render export database modal"""
+        if st.session_state.show_export_modal:
+            with st.container():
+                st.markdown("---")
+                st.subheader("💾 Export All Data")
+                
+                st.warning("⚠️ This will download ALL your data including expenses, budgets, and profile.")
+                
+                with st.form("export_form"):
+                    password = st.text_input("Export Password", type="password", placeholder="Enter export password '2139'")
+                    submit_export = st.form_submit_button("📥 Download All Data")
+                    
+                    if submit_export:
+                        if password == "2139":
+                            try:
+                                self.set_loading(True)
+                                response = requests.post(
+                                    f"{self.backend_url}/users/{st.session_state.user_id}/export-all-data",
+                                    json={"password": password}
+                                )
+                                if response.status_code == 200:
+                                    # Create download button
+                                    zip_content = response.content
+                                    st.download_button(
+                                        label="💾 Click to Download ZIP",
+                                        data=zip_content,
+                                        file_name=f"expense_tracker_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                                        mime="application/zip",
+                                        use_container_width=True
+                                    )
+                                    self.show_toast("✅ Data exported successfully!", "success")
+                                else:
+                                    self.show_toast("❌ Export failed", "error")
+                            except Exception as e:
+                                self.show_toast(f"❌ Export error: {e}", "error")
+                            finally:
+                                self.set_loading(False)
+                        else:
+                            self.show_toast("❌ Invalid export password", "error")
+                
+                if st.button("Close Export"):
+                    st.session_state.show_export_modal = False
+                    st.rerun()
     
     def render_account_modal(self):
         """Render account creation/login modal"""
@@ -127,11 +337,16 @@ class EnhancedExpenseTracker:
                     with st.form("login_form"):
                         phone_number = st.text_input("Phone Number", placeholder="Enter your phone number")
                         password = st.text_input("Password", type="password", placeholder="Enter 6-digit password")
-                        login_submitted = st.form_submit_button("Login")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            login_submitted = st.form_submit_button("Login")
+                        with col2:
+                            forgot_password = st.form_submit_button("Forgot Password?")
                         
                         if login_submitted:
                             if len(phone_number) > 0 and len(password) == 6:
                                 try:
+                                    self.set_loading(True)
                                     response = requests.post(
                                         f"{self.backend_url}/users/login",
                                         json={"phone_number": phone_number, "password": password}
@@ -141,14 +356,20 @@ class EnhancedExpenseTracker:
                                         st.session_state.user_id = data["user_id"]
                                         st.session_state.logged_in = True
                                         st.session_state.show_account_modal = False
-                                        st.success("✅ Login successful!")
+                                        self.show_toast("✅ Login successful!", "success")
                                         st.rerun()
                                     else:
-                                        st.error("❌ Invalid credentials")
+                                        self.show_toast("❌ Invalid credentials", "error")
                                 except Exception as e:
-                                    st.error(f"❌ Login failed: {e}")
+                                    self.show_toast(f"❌ Login failed: {e}", "error")
+                                finally:
+                                    self.set_loading(False)
                             else:
-                                st.error("❌ Please enter valid phone number and 6-digit password")
+                                self.show_toast("❌ Please enter valid phone number and 6-digit password", "error")
+                        
+                        if forgot_password:
+                            st.session_state.show_forgot_password = True
+                            st.rerun()
                 
                 with tab2:
                     with st.form("register_form"):
@@ -160,6 +381,7 @@ class EnhancedExpenseTracker:
                         if register_submitted:
                             if len(new_phone) > 0 and len(new_password) == 6 and new_password == confirm_password:
                                 try:
+                                    self.set_loading(True)
                                     response = requests.post(
                                         f"{self.backend_url}/users/register",
                                         json={"phone_number": new_phone, "password": new_password}
@@ -169,18 +391,30 @@ class EnhancedExpenseTracker:
                                         st.session_state.user_id = data["user_id"]
                                         st.session_state.logged_in = True
                                         st.session_state.show_account_modal = False
-                                        st.success("✅ Account created successfully!")
+                                        self.show_toast("✅ Account created successfully!", "success")
                                         st.rerun()
                                     else:
-                                        st.error("❌ Account creation failed - phone number may already exist")
+                                        error_detail = response.json().get('detail', 'Registration failed')
+                                        self.show_toast(f"❌ {error_detail}", "error")
                                 except Exception as e:
-                                    st.error(f"❌ Registration failed: {e}")
+                                    self.show_toast(f"❌ Registration failed: {e}", "error")
+                                finally:
+                                    self.set_loading(False)
                             else:
-                                st.error("❌ Please check: Phone number, 6-digit password, and password confirmation")
+                                self.show_toast("❌ Please check: Phone number, 6-digit password, and password confirmation", "error")
                 
                 if st.button("Close"):
                     st.session_state.show_account_modal = False
                     st.rerun()
+        
+        # Render sub-modals
+        self.render_forgot_password_modal()
+        self.render_reset_password_modal()
+        self.render_export_modal()
+        
+        # Show loading spinner if loading
+        if st.session_state.loading:
+            self.render_loading_spinner()
     
     def render_sidebar(self):
         """Render enhanced sidebar with navigation and quick stats"""
@@ -224,32 +458,43 @@ class EnhancedExpenseTracker:
             st.markdown("---")
             
             # Account management
-            if st.button("👤 Go to My Account", use_container_width=True):
-                st.session_state.show_account_modal = True
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("👤 My Account", use_container_width=True):
+                    st.session_state.show_account_modal = True
+                    st.rerun()
+            with col2:
+                if st.button("💾 Export DB", use_container_width=True):
+                    st.session_state.show_export_modal = True
+                    st.rerun()
             
             if st.session_state.logged_in and st.session_state.user_id != "default":
                 st.info(f"🔐 Logged in as: {st.session_state.user_id[:8]}...")
                 if st.button("🚪 Logout", use_container_width=True):
                     st.session_state.logged_in = False
                     st.session_state.user_id = "default"
+                    self.show_toast("✅ Logged out successfully", "success")
                     st.rerun()
     
     def initialize_sample_data(self):
         """Initialize sample data"""
         try:
+            self.set_loading(True)
             response = requests.post(f"{self.backend_url}/sample-data/initialize", params={"user_id": st.session_state.user_id})
             if response.status_code == 200:
-                st.success("✅ Sample data initialized successfully!")
+                self.show_toast("✅ Sample data initialized successfully!", "success")
                 st.rerun()
             else:
-                st.error("❌ Failed to initialize sample data")
+                self.show_toast("❌ Failed to initialize sample data", "error")
         except Exception as e:
-            st.error(f"❌ Error initializing sample data: {e}")
+            self.show_toast(f"❌ Error initializing sample data: {e}", "error")
+        finally:
+            self.set_loading(False)
     
     def get_analytics(self, start_date=None, end_date=None):
         """Get analytics from backend"""
         try:
+            self.set_loading(True)
             params = {"user_id": st.session_state.user_id}
             if start_date:
                 params['start_date'] = start_date
@@ -260,12 +505,51 @@ class EnhancedExpenseTracker:
             if response.status_code == 200:
                 return response.json()
         except Exception as e:
-            st.error(f"Error fetching analytics: {e}")
+            self.show_toast(f"Error fetching analytics: {e}", "error")
+        finally:
+            self.set_loading(False)
         return None
     
     def render_dashboard(self):
         """Render comprehensive dashboard"""
         st.header("📊 Financial Dashboard - INR")
+        
+        # Quick date range presets
+        st.subheader("⏰ Quick Date Range")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            if st.button("Today", use_container_width=True):
+                today = datetime.now().date()
+                st.session_state.filters = {'start_date': today.isoformat(), 'end_date': today.isoformat()}
+                self.show_toast("📅 Filter applied: Today", "info")
+                st.rerun()
+        with col2:
+            if st.button("7 Days", use_container_width=True):
+                end_date = datetime.now().date()
+                start_date = end_date - timedelta(days=7)
+                st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                self.show_toast("📅 Filter applied: Last 7 Days", "info")
+                st.rerun()
+        with col3:
+            if st.button("30 Days", use_container_width=True):
+                end_date = datetime.now().date()
+                start_date = end_date - timedelta(days=30)
+                st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                self.show_toast("📅 Filter applied: Last 30 Days", "info")
+                st.rerun()
+        with col4:
+            if st.button("90 Days", use_container_width=True):
+                end_date = datetime.now().date()
+                start_date = end_date - timedelta(days=90)
+                st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                self.show_toast("📅 Filter applied: Last 90 Days", "info")
+                st.rerun()
+        with col5:
+            if st.button("All Time", use_container_width=True):
+                st.session_state.filters = {}
+                self.show_toast("📅 Filter applied: All Time", "info")
+                st.rerun()
         
         # Date range filter with clear option
         col1, col2, col3 = st.columns([2,2,1])
@@ -279,9 +563,11 @@ class EnhancedExpenseTracker:
             with col_apply:
                 if st.button("Apply Filter"):
                     st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                    self.show_toast("✅ Custom filter applied", "success")
             with col_clear:
                 if st.button("Clear Filter"):
                     st.session_state.filters = {}
+                    self.show_toast("🧹 Filters cleared", "info")
                     st.rerun()
         
         analytics = self.get_analytics(
@@ -312,11 +598,14 @@ class EnhancedExpenseTracker:
             categories = len(analytics.get('category_breakdown', {}))
             st.metric("Categories", f"{categories}")
         with col5:
-            st.metric("Savings Rate", f"{analytics.get('savings_rate', 0):.1f}%")
+            savings_rate = analytics.get('savings_rate', 0)
+            savings_icon = "📈" if savings_rate > 20 else "📉" if savings_rate < 10 else "➡️"
+            st.metric("Savings Rate", f"{savings_rate:.1f}% {savings_icon}")
         with col6:
             velocity = analytics.get('spending_velocity', {})
             change = velocity.get('change_percentage', 0)
-            st.metric("Weekly Trend", f"{change:+.1f}%")
+            trend_icon = "📈" if change < 0 else "📉" if change > 0 else "➡️"
+            st.metric("Weekly Trend", f"{change:+.1f}% {trend_icon}")
         
         # First row charts
         col1, col2 = st.columns(2)
@@ -433,7 +722,7 @@ class EnhancedExpenseTracker:
                     min_value=0.01, 
                     step=1.0, 
                     format="%.2f",
-                    value=max(0.01, float(expense_data.get('amount', 0.0))),
+                    value=float(expense_data.get('amount', 0.0)),
                     help="Enter the expense amount"
                 )
                 category = st.selectbox(
@@ -480,7 +769,7 @@ class EnhancedExpenseTracker:
             # Handle form submission INSIDE the form context
             if submitted:
                 if not description or amount <= 0:
-                    st.error("Please fill all required fields (*)")
+                    self.show_toast("❌ Please fill all required fields (*)", "error")
                 else:
                     expense_payload = {
                         "description": description,
@@ -493,6 +782,7 @@ class EnhancedExpenseTracker:
                     }
                     
                     try:
+                        self.set_loading(True)
                         if is_edit:
                             # Update existing expense
                             response = requests.put(
@@ -513,32 +803,39 @@ class EnhancedExpenseTracker:
                             success_message = "✅ Expense added successfully!"
                         
                         if response.status_code == 200:
-                            st.success(success_message)
+                            self.show_toast(success_message, "success")
                             st.balloons()
                             # Clear edit mode
                             st.session_state.edit_expense = None
+                            time.sleep(1)
                             st.rerun()
                         else:
                             error_detail = response.json().get('detail', 'Unknown error')
-                            st.error(f"❌ Error: {error_detail}")
+                            self.show_toast(f"❌ Error: {error_detail}", "error")
                     except Exception as e:
-                        st.error(f"🚫 Failed to connect to backend: {e}")
+                        self.show_toast(f"🚫 Failed to connect to backend: {e}", "error")
+                    finally:
+                        self.set_loading(False)
         
         # Add cancel button in edit mode (outside form)
         if is_edit:
             if st.button("❌ Cancel Edit", use_container_width=True):
                 st.session_state.edit_expense = None
+                self.show_toast("Edit cancelled", "info")
                 st.rerun()
     
     def get_expenses(self, **filters):
         """Get expenses from backend with filters"""
         try:
+            self.set_loading(True)
             params = {"user_id": st.session_state.user_id, **filters}
             response = requests.get(f"{self.backend_url}/expenses/", params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
         except Exception as e:
-            st.error(f"Error fetching expenses: {e}")
+            self.show_toast(f"Error fetching expenses: {e}", "error")
+        finally:
+            self.set_loading(False)
         return []
     
     def render_expense_list(self):
@@ -557,6 +854,7 @@ class EnhancedExpenseTracker:
         with col2:
             if st.button("Clear Search", use_container_width=True):
                 st.session_state.search_query = ""
+                self.show_toast("Search cleared", "info")
                 st.rerun()
         
         # Advanced filters
@@ -604,11 +902,13 @@ class EnhancedExpenseTracker:
                         'search': search_query if search_query else None,
                         'date_range': date_range
                     }
+                    self.show_toast("✅ Filters applied", "success")
                     st.rerun()
             with col_clear:
                 if st.button("Clear All Filters", use_container_width=True):
                     st.session_state.filters = {}
                     st.session_state.search_query = ""
+                    self.show_toast("🧹 All filters cleared", "info")
                     st.rerun()
         
         # Build filter parameters
@@ -697,6 +997,7 @@ class EnhancedExpenseTracker:
                         if st.button("✏️", key=f"edit_{expense['id']}"):
                             st.session_state.edit_expense = expense
                             st.session_state.page = "Add Expense"
+                            self.show_toast("Editing expense...", "info")
                             st.rerun()
                     with col_delete:
                         if st.button("🗑️", key=f"delete_{expense['id']}"):
@@ -705,20 +1006,46 @@ class EnhancedExpenseTracker:
                 st.markdown("---")
     
     def delete_expense(self, expense_id):
-        """Delete an expense"""
-        try:
-            response = requests.delete(
-                f"{self.backend_url}/expenses/{expense_id}", 
-                params={"user_id": st.session_state.user_id},
-                timeout=10
-            )
-            if response.status_code == 200:
-                st.success("✅ Expense deleted successfully!")
-                st.rerun()
-            else:
-                st.error("❌ Failed to delete expense")
-        except Exception as e:
-            st.error(f"❌ Error deleting expense: {e}")
+        """Delete an expense with confirmation"""
+        # Create confirmation dialog
+        confirm_key = f"confirm_delete_{expense_id}"
+        
+        if confirm_key not in st.session_state:
+            st.session_state[confirm_key] = False
+        
+        if not st.session_state[confirm_key]:
+            st.warning(f"⚠️ Are you sure you want to delete this expense?")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Yes, Delete", key=f"yes_{expense_id}"):
+                    st.session_state[confirm_key] = True
+                    st.rerun()
+            with col2:
+                if st.button("❌ Cancel", key=f"no_{expense_id}"):
+                    st.session_state[confirm_key] = False
+                    st.rerun()
+        else:
+            try:
+                self.set_loading(True)
+                response = requests.delete(
+                    f"{self.backend_url}/expenses/{expense_id}", 
+                    params={"user_id": st.session_state.user_id},
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    self.show_toast("✅ Expense deleted successfully!", "success")
+                    # Clear the confirmation state
+                    st.session_state[confirm_key] = False
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    self.show_toast("❌ Failed to delete expense", "error")
+                    st.session_state[confirm_key] = False
+            except Exception as e:
+                self.show_toast(f"❌ Error deleting expense: {e}", "error")
+                st.session_state[confirm_key] = False
+            finally:
+                self.set_loading(False)
     
     def render_analytics(self):
         """Render comprehensive analytics page"""
@@ -879,6 +1206,7 @@ class EnhancedExpenseTracker:
         st.header("💰 Budget Management & Alerts - INR")
         
         try:
+            self.set_loading(True)
             response = requests.get(
                 f"{self.backend_url}/budgets/alerts", 
                 params={"user_id": st.session_state.user_id},
@@ -903,7 +1231,9 @@ class EnhancedExpenseTracker:
                 st.info("No budget alerts data available")
         
         except Exception as e:
-            st.error(f"Error loading budget alerts: {e}")
+            self.show_toast(f"Error loading budget alerts: {e}", "error")
+        finally:
+            self.set_loading(False)
         
         # Budget setup interface - NOW WORKING WITH BACKEND
         st.subheader("🎯 Set Custom Budgets")
@@ -918,14 +1248,17 @@ class EnhancedExpenseTracker:
         
         # Load current budgets from backend
         try:
+            self.set_loading(True)
             response = requests.get(f"{self.backend_url}/budgets/{st.session_state.user_id}")
             if response.status_code == 200:
                 user_budgets = response.json()
             else:
                 user_budgets = {}
         except Exception as e:
-            st.error(f"Error loading budgets: {e}")
+            self.show_toast(f"Error loading budgets: {e}", "error")
             user_budgets = {}
+        finally:
+            self.set_loading(False)
         
         default_budgets = {
             "Food & Dining": 6000,
@@ -956,17 +1289,20 @@ class EnhancedExpenseTracker:
         
         if st.button("💾 Save Budgets", use_container_width=True):
             try:
+                self.set_loading(True)
                 response = requests.post(
                     f"{self.backend_url}/budgets/{st.session_state.user_id}",
                     json=budget_values
                 )
                 if response.status_code == 200:
-                    st.success("✅ Budget limits saved successfully!")
+                    self.show_toast("✅ Budget limits saved successfully!", "success")
                     st.rerun()
                 else:
-                    st.error("❌ Failed to save budgets")
+                    self.show_toast("❌ Failed to save budgets", "error")
             except Exception as e:
-                st.error(f"❌ Error saving budgets: {e}")
+                self.show_toast(f"❌ Error saving budgets: {e}", "error")
+            finally:
+                self.set_loading(False)
     
     def render_export(self):
         """Render data export page with working functionality"""
@@ -984,6 +1320,7 @@ class EnhancedExpenseTracker:
             
             if st.button("📥 Generate Export", use_container_width=True):
                 try:
+                    self.set_loading(True)
                     response = requests.get(
                         f"{self.backend_url}/reports/export",
                         params={
@@ -1017,12 +1354,14 @@ class EnhancedExpenseTracker:
                                 use_container_width=True
                             )
                         
-                        st.success("✅ Export generated successfully!")
+                        self.show_toast("✅ Export generated successfully!", "success")
                     else:
-                        st.error(f"❌ Failed to generate export: {response.status_code}")
+                        self.show_toast(f"❌ Failed to generate export: {response.status_code}", "error")
                     
                 except Exception as e:
-                    st.error(f"❌ Error generating export: {e}")
+                    self.show_toast(f"❌ Error generating export: {e}", "error")
+                finally:
+                    self.set_loading(False)
         
         with col2:
             st.subheader("Quick Reports")
@@ -1034,6 +1373,7 @@ class EnhancedExpenseTracker:
             
             if st.button("📊 Generate Report", use_container_width=True):
                 try:
+                    self.set_loading(True)
                     # Generate actual report data
                     expenses = self.get_expenses()
                     if expenses:
@@ -1098,7 +1438,9 @@ class EnhancedExpenseTracker:
                         st.warning("No expenses data available for report generation")
                         
                 except Exception as e:
-                    st.error(f"❌ Error generating report: {e}")
+                    self.show_toast(f"❌ Error generating report: {e}", "error")
+                finally:
+                    self.set_loading(False)
     
     def run(self):
         """Main method to run the enhanced application"""
