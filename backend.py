@@ -11,8 +11,8 @@ import random
 import zipfile
 import shutil
 import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = FastAPI(
     title="Enhanced Expense Tracker API",
