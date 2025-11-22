@@ -1,4 +1,4 @@
-# 💰 Super Expense Tracker Pro
+# 💰 Expense Analytics
 
 ![Expense Tracker](https://img.shields.io/badge/Expense-Tracker-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-green)
@@ -8,12 +8,10 @@
 
 A comprehensive, user-friendly expense tracking system built with FastAPI backend and Streamlit frontend, designed specifically for Indian users with INR currency support.
 
-## 🎬 Live Demo
+# ✨ See It Live!
+My project, **[Expense Analytics]**, is live and ready to explore.
 
-**Backend API**: [https://expense-tracker-n6e8.onrender.com](https://expense-tracker-n6e8.onrender.com)  
-**Frontend App**: [Your Frontend URL Here]
-
-![Expense Tracker Demo](https://via.placeholder.com/800x400.png?text=Expense+Tracker+Pro+Demo+GIF+Placeholder)
+**👉 [View My Live Project](https://expense-tracker-analytics.streamlit.app/)**
 
 ## 🚀 Quick Start
 
