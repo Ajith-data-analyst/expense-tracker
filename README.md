@@ -11,7 +11,7 @@ A comprehensive, user-friendly expense tracking system built with FastAPI backen
 # ✨ See It Live!
 My project, **[Expense Analytics]**, is live and ready to explore.
 
-            **👉 [View My Live Project](https://expense-tracker-analytics.streamlit.app/)**
+**👉 [View My Live Project](https://expense-tracker-analytics.streamlit.app/)**
 
 ## 🚀 Quick Start
 
