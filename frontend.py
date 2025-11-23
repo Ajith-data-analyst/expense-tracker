@@ -112,6 +112,8 @@ class EnhancedExpenseTracker:
             st.session_state.search_query = ""
         if 'form_cleared' not in st.session_state:
             st.session_state.form_cleared = False
+        if 'date_key' not in st.session_state:
+            st.session_state.date_key = 0
     
     def render_footer(self):
         """Render footer with tech stack and copyright"""
@@ -383,30 +385,55 @@ class EnhancedExpenseTracker:
         return None
     
     def render_dashboard(self):
-        """Render comprehensive dashboard with fixed filters"""
+        """Render comprehensive dashboard with FIXED filtering functionality"""
         st.header("📊 Financial Dashboard - INR")
         
-        # Date range filter with clear option - FIXED
+        # Date range filter with proper session state management
         col1, col2, col3 = st.columns([2,2,1])
+        
+        # Use session state to remember date selections
+        if 'dashboard_start_date' not in st.session_state:
+            st.session_state.dashboard_start_date = datetime.now() - timedelta(days=30)
+        if 'dashboard_end_date' not in st.session_state:
+            st.session_state.dashboard_end_date = datetime.now()
+        
         with col1:
-            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30), key="dashboard_start")
+            start_date = st.date_input(
+                "Start Date", 
+                value=st.session_state.dashboard_start_date, 
+                key=f"dashboard_start_{st.session_state.date_key}"
+            )
         with col2:
-            end_date = st.date_input("End Date", datetime.now(), key="dashboard_end")
+            end_date = st.date_input(
+                "End Date", 
+                value=st.session_state.dashboard_end_date, 
+                key=f"dashboard_end_{st.session_state.date_key}"
+            )
         with col3:
             st.write("")
             col_apply, col_clear = st.columns(2)
             with col_apply:
                 if st.button("Apply Filter"):
-                    st.session_state.filters = {'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()}
+                    # Store dates in session state and set filters
+                    st.session_state.dashboard_start_date = start_date
+                    st.session_state.dashboard_end_date = end_date
+                    st.session_state.filters = {
+                        'start_date': start_date.isoformat(), 
+                        'end_date': end_date.isoformat()
+                    }
+                    st.success("✅ Filter applied!")
                     st.rerun()
             with col_clear:
                 if st.button("Clear Filter"):
-                    # FIXED: Clear filters properly
+                    # Clear filters and reset dates to default
                     st.session_state.filters = {}
-                    # Reset date inputs by rerunning
+                    st.session_state.dashboard_start_date = datetime.now() - timedelta(days=30)
+                    st.session_state.dashboard_end_date = datetime.now()
+                    st.session_state.date_key += 1  # Force date input reset
+                    st.success("✅ Filter cleared!")
                     st.rerun()
         
-        # Use filters from session state or current inputs
+        # Use filters from session state
         filter_start = st.session_state.filters.get('start_date', start_date.isoformat())
         filter_end = st.session_state.filters.get('end_date', end_date.isoformat())
         
@@ -416,7 +443,7 @@ class EnhancedExpenseTracker:
             st.error("No data available for the selected period")
             return
         
-        # Enhanced Key Metrics - FIXED expense count
+        # Enhanced Key Metrics
         st.subheader("📈 Key Financial Metrics")
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         
@@ -425,7 +452,7 @@ class EnhancedExpenseTracker:
         with col2:
             st.metric("Daily Average", f"{CURRENCY}{analytics.get('average_daily', 0):.0f}")
         with col3:
-            # FIXED: Get actual expense count from filtered data
+            # Get actual expense count from filtered data
             expenses = self.get_expenses(
                 start_date=filter_start,
                 end_date=filter_end
@@ -460,7 +487,7 @@ class EnhancedExpenseTracker:
                 st.info("No category data available")
         
         with col2:
-            # Monthly trend - Fixed
+            # Monthly trend
             monthly_trend = analytics.get('monthly_trend', [])
             if monthly_trend:
                 df_trend = pd.DataFrame(monthly_trend)
@@ -532,17 +559,17 @@ class EnhancedExpenseTracker:
             st.info("No expense data available")
     
     def render_add_expense(self):
-        """Render enhanced expense addition form - COMPLETELY FIXED VERSION"""
+        """Render enhanced expense addition form with confirmation message and form clearing"""
         st.header("➕ Add New Expense - INR")
         
         # Check if we're in edit mode
         is_edit = st.session_state.edit_expense is not None
         expense_data = st.session_state.edit_expense or {}
         
-        # Create a simple form without complex parameters that might cause issues
+        # Create form
         form_key = "edit_expense_form" if is_edit else "add_expense_form"
         
-        with st.form(key=form_key):
+        with st.form(key=form_key, clear_on_submit=True):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -597,11 +624,11 @@ class EnhancedExpenseTracker:
                     height=100
                 )
             
-            # CRITICAL FIX: Proper submit button inside form
+            # Submit button
             submit_text = "💾 Update Expense" if is_edit else "💾 Save Expense"
             submitted = st.form_submit_button(submit_text, use_container_width=True)
             
-            # Handle form submission INSIDE the form context
+            # Handle form submission
             if submitted:
                 if not description or amount <= 0:
                     st.error("Please fill all required fields (*)")
@@ -639,10 +666,9 @@ class EnhancedExpenseTracker:
                         if response.status_code == 200:
                             st.success(success_message)
                             st.balloons()
-                            # Clear edit mode and form
+                            # Clear edit mode
                             st.session_state.edit_expense = None
-                            st.session_state.form_cleared = True
-                            st.rerun()
+                            # Don't rerun here to show the success message and cleared form
                         else:
                             error_detail = "Unknown error"
                             try:
@@ -684,11 +710,10 @@ class EnhancedExpenseTracker:
         return []
     
     def render_expense_list(self):
-        """Render enhanced expense list with advanced filtering - FIXED VERSION"""
+        """Render enhanced expense list with FIXED filtering and proper sorting"""
         st.header("📋 Expense Management - INR")
         
-        # Search bar - FIXED clear search
-        # Search bar - FIXED search functionality
+        # Search bar
         col1, col2 = st.columns([3, 1])
         with col1:
             search_query = st.text_input(
@@ -708,7 +733,7 @@ class EnhancedExpenseTracker:
                     st.session_state.filters.pop('search', None)
                 st.rerun()
         
-        # Advanced filters - FIXED functionality
+        # Advanced filters - FIXED clear functionality
         with st.expander("🔍 Advanced Filters", expanded=False):
             col1, col2, col3 = st.columns(3)
             
@@ -743,7 +768,7 @@ class EnhancedExpenseTracker:
             col_apply, col_clear = st.columns(2)
             with col_apply:
                 if st.button("Apply Filters", use_container_width=True):
-                    # Store filters in session state - FIXED
+                    # Store filters in session state
                     filters = {}
                     if category_filter != "All":
                         filters['category'] = category_filter
@@ -755,11 +780,10 @@ class EnhancedExpenseTracker:
                         filters['max_amount'] = max_amount
                     if tags_filter:
                         filters['tags'] = tags_filter
-                    # CRITICAL: Include current search in filters
                     if st.session_state.search_query:
                         filters['search'] = st.session_state.search_query
                     
-                    # Date range filter - FIXED
+                    # Date range filter
                     if date_range == "Last 7 Days":
                         filters['start_date'] = (datetime.now() - timedelta(days=7)).isoformat()
                     elif date_range == "Last 30 Days":
@@ -767,23 +791,23 @@ class EnhancedExpenseTracker:
                     elif date_range == "Last 90 Days":
                         filters['start_date'] = (datetime.now() - timedelta(days=90)).isoformat()
                     elif date_range == "Custom":
-                        # For custom, use the date inputs from dashboard or add custom ones
                         st.info("Use date range from Dashboard tab for custom dates")
                     
                     st.session_state.filters = filters
+                    st.success("✅ Filters applied!")
                     st.rerun()
             with col_clear:
                 if st.button("Clear All Filters", use_container_width=True):
-                    # FIXED: Clear all filters properly
+                    # FIXED: Clear all filters and search query properly
                     st.session_state.filters = {}
                     st.session_state.search_query = ""
+                    st.success("✅ All filters cleared!")
                     st.rerun()
         
         # Build filter parameters from session state
-        # Build filter parameters - FIXED SEARCH FUNCTIONALITY
         filters = st.session_state.get('filters', {}).copy()
 
-        # CRITICAL FIX: Always include current search query in filters
+        # Always include current search query in filters
         if st.session_state.search_query:
             filters['search'] = st.session_state.search_query
         
@@ -793,7 +817,7 @@ class EnhancedExpenseTracker:
             st.info("No expenses found matching your filters.")
             return
         
-        # Display expenses in an interactive table
+        # Display expenses in an interactive table (newest first as returned by backend)
         df = pd.DataFrame(expenses)
         if not df.empty:
             df['date'] = pd.to_datetime(df['date']).dt.date
@@ -810,10 +834,10 @@ class EnhancedExpenseTracker:
         col3.metric("Largest", f"{CURRENCY}{df['amount'].max():.0f}" if not df.empty else f"{CURRENCY}0")
         col4.metric("Smallest", f"{CURRENCY}{df['amount'].min():.0f}" if not df.empty else f"{CURRENCY}0")
         
-        # Enhanced expense display - Fixed to show newest first
+        # Enhanced expense display - Show newest first (already sorted by backend)
         st.subheader("💳 Expense Details (Newest First)")
         
-        for expense in expenses:  # Already sorted by date descending from backend
+        for expense in expenses:
             with st.container():
                 col1, col2, col3, col4, col5 = st.columns([2, 3, 2, 2, 2])
                 
@@ -1035,7 +1059,7 @@ class EnhancedExpenseTracker:
         st.plotly_chart(fig, use_container_width=True)
     
     def render_budgets(self):
-        """Render budget management page with enhanced error handling"""
+        """Render budget management page with enhanced error handling and confirmation message"""
         st.header("💰 Budget Management & Alerts - INR")
         
         try:
@@ -1067,7 +1091,7 @@ class EnhancedExpenseTracker:
         except Exception as e:
             st.error(f"Error loading budget alerts: {e}")
         
-        # Budget setup interface - NOW WORKING WITH BACKEND
+        # Budget setup interface
         st.subheader("🎯 Set Custom Budgets")
         
         st.info("Configure your monthly budget limits for each category:")
