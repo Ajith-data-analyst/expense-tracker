@@ -8,6 +8,8 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: GROQ_API_KEY
+        value: gsk_your_groq_api_key_here
 
   - type: web
     name: expense-tracker-frontend
@@ -23,3 +25,5 @@ services:
           name: expense-tracker-backend
           type: web
           property: url
+      - key: GROQ_API_KEY
+        value: gsk_your_groq_api_key_here
