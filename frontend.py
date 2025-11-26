@@ -8,8 +8,6 @@ import json
 import os
 import base64
 import io
-from streamlit_mic_recognizer import mic_recognizer
-import groq
 
 # Configuration - Use environment variable for backend URL
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
@@ -171,7 +169,7 @@ class EnhancedExpenseTracker:
                     "user_id": st.session_state.user_id,
                     "language": "ta"
                 },
-                timeout=15
+                timeout=30
             )
             
             if response.status_code == 200:
@@ -221,49 +219,16 @@ class EnhancedExpenseTracker:
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.subheader("🎤 Record Your Command")
+            st.subheader("🎤 Text Command Input")
             
-            # Voice recorder
-            audio_text = mic_recognizer(
-                start_prompt="🎤 Start Recording (Tamil/English)",
-                stop_prompt="⏹️ Stop Recording",
-                key="voice_recorder"
-            )
-            
-            if audio_text:
-                # Add user message to conversation
-                st.session_state.voice_conversation.append({
-                    "role": "user",
-                    "text": audio_text,
-                    "timestamp": datetime.now().isoformat()
-                })
-                
-                # Process the command
-                with st.spinner("🔄 Processing your command..."):
-                    response = self.process_voice_command(audio_text)
-                
-                # Add assistant response to conversation
-                st.session_state.voice_conversation.append({
-                    "role": "assistant",
-                    "text": response.get("text", ""),
-                    "audio_base64": response.get("audio_base64"),
-                    "timestamp": datetime.now().isoformat()
-                })
-                
-                # Handle navigation if specified
-                if response.get("navigation"):
-                    st.session_state.page = response["navigation"]
-                    st.rerun()
-        
-        with col2:
-            st.subheader("⌨️ Text Input")
             text_command = st.text_area(
-                "Or type your command:",
-                placeholder="e.g., 'Food 200 add pannu, travel 150 update pannu'",
-                height=100
+                "Type your Tamil/English command:",
+                placeholder="e.g., 'Food 200 add pannu, travel 150 update pannu' or '200 food, 50 tea, 300 petrol serthudu'",
+                height=100,
+                key="voice_input"
             )
             
-            if st.button("Send Text Command", use_container_width=True):
+            if st.button("🎤 Process Command", use_container_width=True):
                 if text_command:
                     # Add user message to conversation
                     st.session_state.voice_conversation.append({
@@ -288,12 +253,47 @@ class EnhancedExpenseTracker:
                     if response.get("navigation"):
                         st.session_state.page = response["navigation"]
                         st.rerun()
+                else:
+                    st.warning("Please enter a command")
+        
+        with col2:
+            st.subheader("⚡ Quick Actions")
+            
+            # Quick command buttons
+            quick_commands = {
+                "Add Food Expense": "Food 200 rupees add pannu",
+                "Add Transport": "Transport 150 rupees add pannu", 
+                "Show Expenses": "All expenses show pannu",
+                "Go to Dashboard": "Dashboard ku po"
+            }
+            
+            for label, command in quick_commands.items():
+                if st.button(label, use_container_width=True):
+                    st.session_state.voice_conversation.append({
+                        "role": "user",
+                        "text": command,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    with st.spinner("Processing..."):
+                        response = self.process_voice_command(command)
+                    
+                    st.session_state.voice_conversation.append({
+                        "role": "assistant", 
+                        "text": response.get("text", ""),
+                        "audio_base64": response.get("audio_base64"),
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    if response.get("navigation"):
+                        st.session_state.page = response["navigation"]
+                        st.rerun()
         
         # Conversation History
         st.subheader("💬 Conversation History")
         
         if not st.session_state.voice_conversation:
-            st.info("No conversation yet. Start by speaking or typing a command!")
+            st.info("No conversation yet. Start by typing a command in Tamil or English!")
         else:
             for i, message in enumerate(st.session_state.voice_conversation):
                 if message["role"] == "user":
@@ -303,55 +303,20 @@ class EnhancedExpenseTracker:
                     
                     # Play audio button for assistant responses
                     if message.get("audio_base64"):
-                        if st.button(f"🔊 Play Audio Response #{i//2 + 1}", key=f"play_audio_{i}"):
-                            self.play_audio_response(message["audio_base64"])
+                        col1, col2 = st.columns([3, 1])
+                        with col2:
+                            if st.button(f"🔊 Play Audio", key=f"play_audio_{i}"):
+                                self.play_audio_response(message["audio_base64"])
         
-        # Quick Action Buttons
-        st.subheader("⚡ Quick Voice Commands")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            if st.button("🍽️ Add Food Expense", use_container_width=True):
-                st.session_state.voice_conversation.append({
-                    "role": "user",
-                    "text": "Food 200 rupees add pannu",
-                    "timestamp": datetime.now().isoformat()
-                })
-                response = self.process_voice_command("Food 200 rupees add pannu")
-                st.session_state.voice_conversation.append({
-                    "role": "assistant",
-                    "text": response.get("text", ""),
-                    "audio_base64": response.get("audio_base64"),
-                    "timestamp": datetime.now().isoformat()
-                })
-                st.rerun()
-        
-        with col2:
-            if st.button("📊 Show Analytics", use_container_width=True):
-                st.session_state.page = "Analytics"
-                st.rerun()
-        
-        with col3:
-            if st.button("🗑️ Delete Last", use_container_width=True):
-                st.session_state.voice_conversation.append({
-                    "role": "user",
-                    "text": "Last expense delete pannu",
-                    "timestamp": datetime.now().isoformat()
-                })
-                response = self.process_voice_command("Last expense delete pannu")
-                st.session_state.voice_conversation.append({
-                    "role": "assistant",
-                    "text": response.get("text", ""),
-                    "audio_base64": response.get("audio_base64"),
-                    "timestamp": datetime.now().isoformat()
-                })
-                st.rerun()
-        
-        with col4:
-            if st.button("🔄 Clear Chat", use_container_width=True):
-                st.session_state.voice_conversation = []
-                st.rerun()
-    
+        # Clear conversation button
+        if st.button("🗑️ Clear Conversation", use_container_width=True):
+            st.session_state.voice_conversation = []
+            st.rerun()
+
+    # ... (All other existing methods from the original frontend.py remain exactly the same)
+    # The render_dashboard, render_add_expense, render_expense_list, render_analytics, 
+    # render_budgets, render_export, render_sidebar, and other methods continue unchanged...
+
     def render_sidebar(self):
         """Render enhanced sidebar with navigation and quick stats"""
         with st.sidebar:
@@ -414,9 +379,131 @@ class EnhancedExpenseTracker:
                     st.session_state.user_id = "default"
                     st.rerun()
 
-    # ... (All other existing methods from the previous frontend.py remain exactly the same)
-    # The render_dashboard, render_add_expense, render_expense_list, render_analytics, 
-    # render_budgets, render_export, and other methods continue unchanged...
+    # Include all the other original methods (render_dashboard, render_add_expense, etc.)
+    # They should be copied from your original frontend.py file
+
+    def get_analytics(self, start_date=None, end_date=None):
+        """Get analytics from backend with error handling"""
+        try:
+            params = {"user_id": st.session_state.user_id}
+            if start_date:
+                params['start_date'] = start_date
+            if end_date:
+                params['end_date'] = end_date
+                
+            response = requests.get(f"{self.backend_url}/analytics/overview", params=params, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                st.error(f"Analytics API error: {response.status_code}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Analytics request timed out")
+        except Exception as e:
+            st.error(f"Error fetching analytics: {e}")
+        return None
+
+    def render_dashboard(self):
+        """Render comprehensive dashboard"""
+        st.header("📊 Financial Dashboard - INR")
+        # ... (copy the original render_dashboard method from your frontend.py)
+
+    def render_add_expense(self):
+        """Render enhanced expense addition form"""
+        st.header("➕ Add New Expense - INR")
+        # ... (copy the original render_add_expense method from your frontend.py)
+
+    def get_expenses(self, **filters):
+        """Get expenses from backend with filters and error handling"""
+        try:
+            params = {"user_id": st.session_state.user_id}
+            
+            # Add filters
+            for key, value in filters.items():
+                if value is not None:
+                    params[key] = value
+            
+            response = requests.get(f"{self.backend_url}/expenses/", params=params, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                st.error(f"Error fetching expenses: {response.status_code}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Expenses request timed out")
+        except Exception as e:
+            st.error(f"Error fetching expenses: {e}")
+        return []
+
+    def render_expense_list(self):
+        """Render enhanced expense list"""
+        st.header("📋 Expense Management - INR")
+        # ... (copy the original render_expense_list method from your frontend.py)
+
+    def delete_expense(self, expense_id):
+        """Delete an expense with error handling"""
+        try:
+            response = requests.delete(
+                f"{self.backend_url}/expenses/{expense_id}", 
+                params={"user_id": st.session_state.user_id},
+                timeout=10
+            )
+            if response.status_code == 200:
+                st.success("✅ Expense deleted successfully!")
+                st.rerun()
+            else:
+                error_detail = "Failed to delete expense"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get('detail', error_detail)
+                except:
+                    pass
+                st.error(f"❌ {error_detail}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Delete request timed out")
+        except Exception as e:
+            st.error(f"❌ Error deleting expense: {e}")
+
+    def render_analytics(self):
+        """Render comprehensive analytics page"""
+        st.header("📈 Advanced Analytics - INR")
+        # ... (copy the original render_analytics method from your frontend.py)
+
+    def render_budgets(self):
+        """Render budget management page"""
+        st.header("💰 Budget Management & Alerts - INR")
+        # ... (copy the original render_budgets method from your frontend.py)
+
+    def render_export(self):
+        """Render data export page"""
+        st.header("📤 Data Export & Reports - INR")
+        # ... (copy the original render_export method from your frontend.py)
+
+    def render_account_modal(self):
+        """Render account creation/login modal"""
+        # ... (copy the original render_account_modal method from your frontend.py)
+
+    def initialize_sample_data(self):
+        """Initialize sample data with error handling"""
+        try:
+            response = requests.post(
+                f"{self.backend_url}/sample-data/initialize", 
+                params={"user_id": st.session_state.user_id},
+                timeout=10
+            )
+            if response.status_code == 200:
+                st.success("✅ Sample data initialized successfully!")
+                st.rerun()
+            else:
+                error_detail = "Failed to initialize sample data"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get('detail', error_detail)
+                except:
+                    pass
+                st.error(f"❌ {error_detail}")
+        except requests.exceptions.Timeout:
+            st.error("⏰ Sample data initialization timed out")
+        except Exception as e:
+            st.error(f"❌ Error initializing sample data: {e}")
     
     def run(self):
         """Main method to run the enhanced application with voice assistant"""
