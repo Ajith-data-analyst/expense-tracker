@@ -7,7 +7,7 @@ import uuid
 import os
 import json
 import random
-import groq
+import requests as http_requests
 from gtts import gTTS
 import io
 import base64
@@ -31,7 +31,6 @@ app.add_middleware(
 DATA_FILE = "expenses_data.json"
 USERS_FILE = "users_data.json"
 BUDGETS_FILE = "budgets_data.json"
-VOICE_SESSIONS_FILE = "voice_sessions.json"
 
 class ExpenseBase(BaseModel):
     description: str
@@ -95,16 +94,13 @@ class BudgetAlert(BaseModel):
 class VoiceCommand(BaseModel):
     text: str
     user_id: str = "default"
-    language: str = "ta"  # Tamil by default
+    language: str = "ta"
 
 class VoiceResponse(BaseModel):
     text: str
     audio_base64: Optional[str] = None
     commands: List[Dict[str, Any]] = []
     navigation: Optional[str] = None
-
-# Initialize Groq client
-groq_client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY", "gsk_test_key"))
 
 def load_data(filename):
     """Load data from JSON file with enhanced error handling"""
@@ -293,8 +289,8 @@ def text_to_speech(text, language="ta"):
         print(f"Error in text-to-speech: {e}")
         return None
 
-def parse_voice_command(command_text, user_id="default"):
-    """Parse natural language command using Groq LLM"""
+def parse_voice_command_with_groq_api(command_text, user_id="default"):
+    """Parse natural language command using Groq API via HTTP requests"""
     try:
         # Get user's expenses for context
         expenses = get_expenses(user_id)
@@ -345,18 +341,47 @@ def parse_voice_command(command_text, user_id="default"):
         Current Date: {datetime.now().isoformat()}
         """
         
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
+        # Use Groq API via HTTP requests instead of Groq library
+        groq_api_key = os.environ.get("GROQ_API_KEY")
+        if not groq_api_key:
+            return {
+                "response_text": "Groq API key not configured. Please set GROQ_API_KEY environment variable.",
+                "commands": [],
+                "navigation": None
+            }
+        
+        headers = {
+            "Authorization": f"Bearer {groq_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_context}
             ],
-            model="llama-3.1-8b-instant",
-            temperature=0.3,
-            response_format={"type": "json_object"}
+            "temperature": 0.3,
+            "response_format": {"type": "json_object"}
+        }
+        
+        response = http_requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
         )
         
-        response = json.loads(chat_completion.choices[0].message.content)
-        return response
+        if response.status_code == 200:
+            result = response.json()
+            return json.loads(result['choices'][0]['message']['content'])
+        else:
+            print(f"Groq API error: {response.status_code} - {response.text}")
+            return {
+                "response_text": "Sorry, I'm having trouble understanding right now. Please try again.",
+                "commands": [],
+                "navigation": None
+            }
         
     except Exception as e:
         print(f"Error parsing voice command: {e}")
@@ -647,7 +672,7 @@ async def process_voice_command(voice_command: VoiceCommand):
     """Process voice commands with Tamil/English support"""
     try:
         # Parse the voice command
-        parsed_response = parse_voice_command(voice_command.text, voice_command.user_id)
+        parsed_response = parse_voice_command_with_groq_api(voice_command.text, voice_command.user_id)
         
         # Execute commands if any
         execution_results = []
@@ -682,19 +707,6 @@ async def process_voice_command(voice_command: VoiceCommand):
             commands=[],
             navigation=None
         )
-
-@app.post("/voice/transcribe")
-async def transcribe_audio(audio_file: bytes):
-    """Transcribe audio using Groq Whisper (placeholder - implement actual Whisper)"""
-    try:
-        # In a real implementation, you would send audio to Whisper API
-        # For now, return a placeholder
-        return {
-            "text": "Audio transcription would appear here",
-            "language": "ta"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Transcription error: {str(e)}")
 
 # Initialize sample data when backend starts
 try:
