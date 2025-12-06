@@ -18,7 +18,7 @@ from gtts import gTTS
 import tempfile
 import wave
 import numpy as np
-from audio_recorder_streamlit import audio_recorder
+from streamlit_mic_recorder import mic_recorder
 
 # Configuration
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
@@ -313,7 +313,7 @@ class TamilVoiceAssistantUI:
         with col_buttons[1]:
             # Voice recorder
             st.markdown("#### 🎙️ பதிவு செய்க")
-            audio_bytes = audio_recorder(
+            audio_bytes = mic_recorder(
                 text="",
                 recording_color="#e74c3c",
                 neutral_color="#6c757d",
