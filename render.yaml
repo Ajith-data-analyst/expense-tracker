@@ -3,7 +3,7 @@ services:
     name: expense-tracker-backend
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y ffmpeg portaudio19-dev
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PORT
@@ -17,7 +17,7 @@ services:
     name: expense-tracker-frontend
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt && apt-get update && apt-get install -y ffmpeg
+    buildCommand: pip install -r requirements.txt
     startCommand: streamlit run frontend.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: PORT
@@ -29,9 +29,3 @@ services:
           property: url
       - key: GROQ_API_KEY
         sync: false
-      - key: STREAMLIT_SERVER_ENABLE_CORS
-        value: "false"
-      - key: STREAMLIT_SERVER_FILE_WATCHER_TYPE
-        value: "none"
-      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
-        value: "false"
