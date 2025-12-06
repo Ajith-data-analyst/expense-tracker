@@ -16,9 +16,7 @@ import streamlit.components.v1 as components
 import io
 from gtts import gTTS
 import tempfile
-import wave
 import numpy as np
-
 
 # Configuration
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
@@ -309,22 +307,21 @@ class TamilVoiceAssistantUI:
                     self.process_text_command(text_command)
                 else:
                     st.warning("தயவு செய்து ஒரு கட்டளையை உள்ளிடவும்.")
-
-
-        with col2:
+        
+        with col_buttons[1]:
             # Voice recorder using file uploader
-            st.markdown("### 🎙️ பதிவு செய்க")
+            st.markdown("#### 🎙️ பதிவு செய்க")
             audio_file = st.file_uploader(
-                "ஆடியோ கோப்பை பதிவேற்று",
-                type=['wav', 'mp3', 'm4a'],
+                "ஆடியோ கோப்பை பதிவேற்று", 
+                type=['wav', 'mp3', 'm4a'], 
                 key="audio_uploader",
                 label_visibility="collapsed"
             )
-
+            
             if audio_file is not None:
                 audio_bytes = audio_file.read()
                 self.process_audio(audio_bytes)
-
+        
         with col_buttons[2]:
             # Quick action: Add expense
             if st.button("➕ செலவு சேர்", use_container_width=True):
