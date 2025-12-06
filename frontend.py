@@ -1,4 +1,13 @@
 import streamlit as st
+# SET PAGE CONFIG FIRST - MUST BE BEFORE ANY OTHER STREAMLIT COMMANDS
+st.set_page_config(
+    page_title="💰 Super Expense Tracker Pro with Tamil Voice Assistant",
+    page_icon="🗣️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Now import other modules
 import requests
 import pandas as pd
 import plotly.express as px
@@ -31,7 +40,6 @@ class TamilVoiceAssistantUI:
         self.websocket = None
         self.is_connected = False
         self.audio_queue = queue.Queue()
-        self.setup_ui()
         
     def setup_ui(self):
         """Setup assistant UI with Tamil styling"""
@@ -729,16 +737,11 @@ class EnhancedExpenseTracker:
     def __init__(self, backend_url):
         self.backend_url = backend_url
         self.voice_assistant = TamilVoiceAssistantUI(backend_url)
-        self.setup_page()
-        
+        # Don't call setup_page here - page config is already set at top
+    
     def setup_page(self):
         """Configure Streamlit page settings"""
-        st.set_page_config(
-            page_title="💰 Super Expense Tracker Pro with Tamil Voice Assistant",
-            page_icon="🗣️",
-            layout="wide",
-            initial_sidebar_state="expanded"
-        )
+        # REMOVED st.set_page_config() from here - it's now at the top of the file
         
         # Enhanced CSS with Tamil styling
         st.markdown("""
@@ -1917,6 +1920,9 @@ class EnhancedExpenseTracker:
         if st.session_state.show_account_modal:
             self.render_account_modal()
             return
+        
+        # Call setup_page to render header and CSS
+        self.setup_page()
         
         # Render sidebar
         self.render_sidebar()
