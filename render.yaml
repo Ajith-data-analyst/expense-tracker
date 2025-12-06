@@ -8,10 +8,6 @@ services:
     envVars:
       - key: PORT
         value: 8000
-      - key: GROQ_API_KEY
-        sync: false
-      - key: WHISPER_MODEL
-        value: "large-v3-turbo"
 
   - type: web
     name: expense-tracker-frontend
@@ -27,5 +23,3 @@ services:
           name: expense-tracker-backend
           type: web
           property: url
-      - key: GROQ_API_KEY
-        sync: false
