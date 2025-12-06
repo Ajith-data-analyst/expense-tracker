@@ -656,7 +656,8 @@ class TamilVoiceAssistant:
             # Check for "last" or "recent" references
             has_last = any(word in text for word in ["last", "recent", "final", "கடைசி", "இறுதி"])
             
-            if action and entity_type := self._determine_entity(text, has_last):
+            entity_type = self._determine_entity(text, has_last)
+            if action and entity_type:
                 details = {
                     "amount": amount,
                     "category": category or "Other",
