@@ -7,4 +7,5 @@ plotly==5.17.0
 python-multipart==0.0.6
 SpeechRecognition==3.10.0
 pyttsx3==2.90
-streamlit-mic-recorder==0.0.28
+streamlit-mic-recorder==0.0.8
+
