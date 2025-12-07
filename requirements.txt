@@ -7,5 +7,3 @@ plotly==5.17.0
 python-multipart==0.0.6
 SpeechRecognition==3.10.0
 pyttsx3==2.90
-pyaudio==0.2.13
-webrtcvad==2.0.10
