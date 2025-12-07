@@ -9,9 +9,15 @@ import json
 import random
 import base64
 from io import BytesIO
-from groq import Groq
 from gtts import gTTS
 import re
+
+# Import Groq with better error handling
+try:
+    from groq import Groq
+    groq_available = True
+except ImportError:
+    groq_available = False
 
 app = FastAPI(
     title="Enhanced Expense Tracker API with Voice Assistant",
@@ -28,8 +34,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq client
-groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+# Initialize Groq client safely
+groq_client = None
+if groq_available:
+    try:
+        api_key = os.environ.get("GROQ_API_KEY", "")
+        if api_key:
+            groq_client = Groq(api_key=api_key)
+    except Exception as e:
+        print(f"Warning: Could not initialize Groq client: {e}")
+        groq_client = None
 
 # Data storage files
 DATA_FILE = "expenses_data.json"
@@ -506,7 +520,8 @@ def read_root():
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
         "status": "healthy",
-        "voice_assistant": "enabled"
+        "voice_assistant": "enabled",
+        "groq_available": groq_client is not None
     }
 
 @app.post("/expenses/", response_model=Expense)
@@ -980,18 +995,20 @@ def get_user(user_id: str):
 def transcribe_voice(request: VoiceTranscriptionRequest):
     """Transcribe voice audio using Groq Whisper API"""
     try:
-        if not os.environ.get("GROQ_API_KEY"):
-            return {"error": "Groq API key not configured", "transcription": "Voice feature not available"}
+        if not groq_client:
+            return {"error": "Groq API not configured", "transcription": "Voice feature not available", "status": "failed"}
         
-        audio_bytes = base64.b64decode(request.audio_base64)
-        with BytesIO(audio_bytes) as audio_file:
-            transcript = groq_client.audio.transcriptions.create(
-                file=("audio.wav", audio_file, "audio/wav"),
-                model="whisper-large-v3",
-                language="ta"
-            )
-        
-        return {"transcription": transcript.text, "status": "success"}
+        try:
+            audio_bytes = base64.b64decode(request.audio_base64)
+            with BytesIO(audio_bytes) as audio_file:
+                transcript = groq_client.audio.transcriptions.create(
+                    file=("audio.wav", audio_file, "audio/wav"),
+                    model="whisper-large-v3",
+                    language="ta"
+                )
+            return {"transcription": transcript.text, "status": "success"}
+        except Exception as e:
+            return {"transcription": f"Transcription error: {str(e)}", "status": "failed"}
     except Exception as e:
         return {"transcription": f"Error: {str(e)}", "status": "failed"}
 
