@@ -7,12 +7,11 @@ import uuid
 import os
 import json
 import random
-import io
 import base64
-import wave
-import numpy as np
+from io import BytesIO
 from groq import Groq
 from gtts import gTTS
+import re
 
 app = FastAPI(
     title="Enhanced Expense Tracker API with Voice Assistant",
@@ -29,19 +28,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize Groq client
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+
 # Data storage files
 DATA_FILE = "expenses_data.json"
 USERS_FILE = "users_data.json"
 BUDGETS_FILE = "budgets_data.json"
 
-# Initialize Groq client
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-if GROQ_API_KEY:
-    groq_client = Groq(api_key=GROQ_API_KEY)
-else:
-    groq_client = None
-
-# ==================== MODELS ====================
+# ============================================================================
+# PYDANTIC MODELS
+# ============================================================================
 
 class ExpenseBase(BaseModel):
     description: str
@@ -102,20 +99,30 @@ class BudgetAlert(BaseModel):
     percentage: float
     alert_level: str
 
-class VoiceTranscribeRequest(BaseModel):
+# Voice Assistant Models
+class VoiceTranscriptionRequest(BaseModel):
     audio_base64: str
 
-class VoiceActionRequest(BaseModel):
-    transcription: str
+class VoiceAction(BaseModel):
+    type: str
+    category: Optional[str] = None
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    id: Optional[str] = None
+    page: Optional[str] = None
+    status: str = "pending"
+    summary: str = ""
 
-class VoiceActionResponse(BaseModel):
+class VoiceExecutionResponse(BaseModel):
     transcription: str
-    actions: List[Dict[str, Any]]
+    actions: List[VoiceAction]
     confirmations: List[str]
     navigation: Optional[str] = None
-    tts_base64: Optional[str] = None
+    tts_audio_base64: str = ""
 
-# ==================== UTILITY FUNCTIONS ====================
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def load_data(filename):
     """Load data from JSON file with enhanced error handling"""
@@ -276,8 +283,124 @@ def save_budgets(data):
         print(f"Error saving budgets: {e}")
         return False
 
+def generate_sample_data():
+    """Generate 3 months of sample expense data"""
+    sample_data = []
+    base_date = datetime.now() - timedelta(days=90)
+    monthly_expenses = [
+        {"desc": "Hostel Rent", "amount": 8000, "category": "Housing", "tags": ["hostel", "rent"]},
+        {"desc": "College Fees", "amount": 5000, "category": "Education", "tags": ["college", "fees"]},
+        {"desc": "Internet Bill", "amount": 700, "category": "Utilities", "tags": ["wifi", "internet"]},
+        {"desc": "Mobile Recharge", "amount": 299, "category": "Utilities", "tags": ["mobile", "recharge"]},
+    ]
+    food_items = [
+        {"desc": "Mess Lunch", "amount": 80, "tags": ["mess", "lunch"]},
+        {"desc": "Mess Dinner", "amount": 80, "tags": ["mess", "dinner"]},
+        {"desc": "Breakfast", "amount": 50, "tags": ["breakfast", "canteen"]},
+        {"desc": "Tea/Snacks", "amount": 30, "tags": ["tea", "snacks"]},
+        {"desc": "Restaurant", "amount": 300, "tags": ["restaurant", "treat"]},
+    ]
+    transport_items = [
+        {"desc": "Bus Pass", "amount": 500, "tags": ["bus", "monthly"]},
+        {"desc": "Auto", "amount": 100, "tags": ["auto", "local"]},
+        {"desc": "Metro", "amount": 60, "tags": ["metro"]},
+    ]
+    entertainment_items = [
+        {"desc": "Movie Ticket", "amount": 200, "tags": ["movie", "entertainment"]},
+        {"desc": "Coffee Shop", "amount": 150, "tags": ["coffee", "friends"]},
+        {"desc": "Shopping", "amount": 500, "tags": ["clothes", "shopping"]},
+    ]
+    education_items = [
+        {"desc": "Books", "amount": 800, "tags": ["books", "study"]},
+        {"desc": "Online Course", "amount": 1200, "tags": ["course", "online"]},
+        {"desc": "Stationery", "amount": 200, "tags": ["stationery", "college"]},
+    ]
+    current_date = base_date
+    expense_count = 0
+    while current_date <= datetime.now():
+        if current_date.day == 1:
+            for expense in monthly_expenses:
+                sample_data.append({
+                    "id": str(uuid.uuid4()),
+                    "description": expense["desc"],
+                    "amount": float(expense["amount"]),
+                    "category": expense["category"],
+                    "date": current_date.date().isoformat(),
+                    "priority": "High",
+                    "tags": expense["tags"],
+                    "notes": "Monthly expense",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                })
+                expense_count += 1
+        if random.random() > 0.1:
+            food_count = random.randint(2, 4)
+            for _ in range(food_count):
+                food = random.choice(food_items)
+                sample_data.append({
+                    "id": str(uuid.uuid4()),
+                    "description": food["desc"],
+                    "amount": float(food["amount"]),
+                    "category": "Food & Dining",
+                    "date": current_date.date().isoformat(),
+                    "priority": "Medium",
+                    "tags": food["tags"],
+                    "notes": "Daily food expense",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                })
+                expense_count += 1
+        if random.random() > 0.4:
+            transport = random.choice(transport_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": transport["desc"],
+                "amount": float(transport["amount"]),
+                "category": "Transportation",
+                "date": current_date.date().isoformat(),
+                "priority": "Medium",
+                "tags": transport["tags"],
+                "notes": "Transportation expense",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            })
+            expense_count += 1
+        if current_date.weekday() == 6 and random.random() > 0.3:
+            entertainment = random.choice(entertainment_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": entertainment["desc"],
+                "amount": float(entertainment["amount"]),
+                "category": "Entertainment",
+                "date": current_date.date().isoformat(),
+                "priority": "Low",
+                "tags": entertainment["tags"],
+                "notes": "Weekend entertainment",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            })
+            expense_count += 1
+        if random.random() > 0.8:
+            education = random.choice(education_items)
+            sample_data.append({
+                "id": str(uuid.uuid4()),
+                "description": education["desc"],
+                "amount": float(education["amount"]),
+                "category": "Education",
+                "date": current_date.date().isoformat(),
+                "priority": "High",
+                "tags": education["tags"],
+                "notes": "Educational expense",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            })
+            expense_count += 1
+        current_date += timedelta(days=1)
+    print(f"Generated {expense_count} sample expenses")
+    return sample_data
+
 def initialize_sample_data(user_id="default"):
-    """Initialize sample data for Chennai computer science student with enhanced error handling"""
+    """Initialize sample data"""
     try:
         existing_expenses = get_expenses(user_id)
         if len(existing_expenses) > 5:
@@ -296,153 +419,99 @@ def initialize_sample_data(user_id="default"):
         print(f"❌ Error initializing sample data: {e}")
         return False
 
-def generate_sample_data():
-    """Generate 3 months of sample expense data for Chennai CS student"""
-    sample_data = []
-    base_date = datetime.now() - timedelta(days=90)
+# ============================================================================
+# VOICE ASSISTANT FUNCTIONS
+# ============================================================================
 
-    monthly_expenses = [
-        {"desc": "Hostel Rent", "amount": 8000, "category": "Housing", "tags": ["hostel", "rent"]},
-        {"desc": "College Fees", "amount": 5000, "category": "Education", "tags": ["college", "fees"]},
-        {"desc": "Internet Bill", "amount": 700, "category": "Utilities", "tags": ["wifi", "internet"]},
-        {"desc": "Mobile Recharge", "amount": 299, "category": "Utilities", "tags": ["mobile", "recharge"]},
-    ]
+def parse_tamil_voice_command(text: str) -> List[dict]:
+    """Parse Tamil/Tanglish voice commands and extract actions"""
+    actions = []
+    text_lower = text.lower()
+    commands = re.split(r'[,;]|அப்புறம்|மற்றும்', text)
+    
+    category_map = {
+        'food': 'Food & Dining', 'உணவு': 'Food & Dining',
+        'travel': 'Transportation', 'பயணம்': 'Transportation',
+        'transport': 'Transportation', 'shopping': 'Shopping',
+        'entertainment': 'Entertainment', 'movie': 'Entertainment',
+        'utility': 'Utilities', 'utilities': 'Utilities', 'bill': 'Utilities',
+        'education': 'Education', 'course': 'Education',
+        'health': 'Healthcare', 'healthcare': 'Healthcare',
+        'housing': 'Housing', 'rent': 'Housing',
+        'bus': 'Transportation', 'auto': 'Transportation', 'metro': 'Transportation',
+    }
+    
+    for command in commands:
+        command = command.strip()
+        if not command:
+            continue
+        action = {"type": "unknown", "status": "pending"}
+        numbers = re.findall(r'\d+', command)
+        if numbers:
+            action["amount"] = float(numbers[0])
+        if any(word in command for word in ['add', 'add பண்ணு', 'panna', 'seru']):
+            action["type"] = "add"
+        elif any(word in command for word in ['update', 'update பண்ணு', 'மாற்று', 'change', 'edit']):
+            action["type"] = "update"
+        elif any(word in command for word in ['delete', 'remove', 'remove பண்ணு']):
+            action["type"] = "delete"
+        elif any(word in command for word in ['analytics', 'analytics கு போ', 'dashboard', 'list', 'list காட்டு', 'show', 'view']):
+            action["type"] = "navigate"
+        for key, value in category_map.items():
+            if key in command:
+                action["category"] = value
+                action["description"] = f"{value} expense"
+                break
+        if any(word in command for word in ['analytics', 'analytics கு போ']):
+            action["page"] = "Analytics"
+        elif any(word in command for word in ['dashboard']):
+            action["page"] = "Dashboard"
+        elif any(word in command for word in ['list', 'list காட்டு', 'view all', 'view']):
+            action["page"] = "View All"
+        elif any(word in command for word in ['add', 'new expense', 'create']):
+            action["page"] = "Add Expense"
+        elif any(word in command for word in ['budget']):
+            action["page"] = "Budget Manager"
+        if action["type"] != "unknown":
+            actions.append(action)
+    
+    return actions if actions else [{"type": "unknown", "status": "failed", "summary": "Could not understand command"}]
 
-    food_items = [
-        {"desc": "Mess Lunch", "amount": 80, "tags": ["mess", "lunch"]},
-        {"desc": "Mess Dinner", "amount": 80, "tags": ["mess", "dinner"]},
-        {"desc": "Breakfast", "amount": 50, "tags": ["breakfast", "canteen"]},
-        {"desc": "Tea/Snacks", "amount": 30, "tags": ["tea", "snacks"]},
-        {"desc": "Restaurant", "amount": 300, "tags": ["restaurant", "treat"]},
-    ]
+def generate_tamil_confirmation(action: dict) -> str:
+    """Generate Tamil confirmation message for action"""
+    if action["type"] == "add":
+        category = action.get("category", "expense").split("&")[0].strip()
+        amount = action.get("amount", 0)
+        return f"{category} க்கு {amount} ரூபாய் add பண்ணிட்டேன்."
+    elif action["type"] == "update":
+        amount = action.get("amount", 0)
+        return f"Expense {amount} ரூபாய்க்கு update பண்ணிட்டேன்."
+    elif action["type"] == "delete":
+        return "Last expense delete ஆயிற்று."
+    elif action["type"] == "navigate":
+        page = action.get("page", "Dashboard")
+        return f"{page} பக்கத்திற்கு போ."
+    else:
+        return "Command execute ஆகலை. மீண்டும் முயற்சி செய்யுங்கள்."
 
-    transport_items = [
-        {"desc": "Bus Pass", "amount": 500, "tags": ["bus", "monthly"]},
-        {"desc": "Auto", "amount": 100, "tags": ["auto", "local"]},
-        {"desc": "Metro", "amount": 60, "tags": ["metro"]},
-    ]
-
-    entertainment_items = [
-        {"desc": "Movie Ticket", "amount": 200, "tags": ["movie", "entertainment"]},
-        {"desc": "Coffee Shop", "amount": 150, "tags": ["coffee", "friends"]},
-        {"desc": "Shopping", "amount": 500, "tags": ["clothes", "shopping"]},
-    ]
-
-    education_items = [
-        {"desc": "Books", "amount": 800, "tags": ["books", "study"]},
-        {"desc": "Online Course", "amount": 1200, "tags": ["course", "online"]},
-        {"desc": "Stationery", "amount": 200, "tags": ["stationery", "college"]},
-    ]
-
-    current_date = base_date
-    expense_count = 0
-
-    while current_date <= datetime.now():
-        if current_date.day == 1:
-            for expense in monthly_expenses:
-                sample_data.append({
-                    "id": str(uuid.uuid4()),
-                    "description": expense["desc"],
-                    "amount": float(expense["amount"]),
-                    "category": expense["category"],
-                    "date": current_date.date().isoformat(),
-                    "priority": "High",
-                    "tags": expense["tags"],
-                    "notes": "Monthly expense",
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                })
-                expense_count += 1
-
-        if random.random() > 0.1:
-            food_count = random.randint(2, 4)
-            for _ in range(food_count):
-                food = random.choice(food_items)
-                sample_data.append({
-                    "id": str(uuid.uuid4()),
-                    "description": food["desc"],
-                    "amount": float(food["amount"]),
-                    "category": "Food & Dining",
-                    "date": current_date.date().isoformat(),
-                    "priority": "Medium",
-                    "tags": food["tags"],
-                    "notes": "Daily food expense",
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                })
-                expense_count += 1
-
-        if random.random() > 0.4:
-            transport = random.choice(transport_items)
-            sample_data.append({
-                "id": str(uuid.uuid4()),
-                "description": transport["desc"],
-                "amount": float(transport["amount"]),
-                "category": "Transportation",
-                "date": current_date.date().isoformat(),
-                "priority": "Medium",
-                "tags": transport["tags"],
-                "notes": "Transportation expense",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            })
-            expense_count += 1
-
-        if current_date.weekday() == 6 and random.random() > 0.3:
-            entertainment = random.choice(entertainment_items)
-            sample_data.append({
-                "id": str(uuid.uuid4()),
-                "description": entertainment["desc"],
-                "amount": float(entertainment["amount"]),
-                "category": "Entertainment",
-                "date": current_date.date().isoformat(),
-                "priority": "Low",
-                "tags": entertainment["tags"],
-                "notes": "Weekend entertainment",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            })
-            expense_count += 1
-
-        if random.random() > 0.8:
-            education = random.choice(education_items)
-            sample_data.append({
-                "id": str(uuid.uuid4()),
-                "description": education["desc"],
-                "amount": float(education["amount"]),
-                "category": "Education",
-                "date": current_date.date().isoformat(),
-                "priority": "High",
-                "tags": education["tags"],
-                "notes": "Educational expense",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            })
-            expense_count += 1
-
-        current_date += timedelta(days=1)
-
-    print(f"Generated {expense_count} sample expenses")
-    return sample_data
-
-# ==================== ROOT ENDPOINTS ====================
+# ============================================================================
+# API ENDPOINTS - EXPENSES (CRUD)
+# ============================================================================
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Enhanced Expense Tracker API with Voice Assistant is running",
+        "message": "Enhanced Expense Tracker API with Voice Assistant",
         "version": "3.0.0",
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
         "status": "healthy",
-        "voice_assistant": "enabled" if groq_client else "disabled (no GROQ_API_KEY)"
+        "voice_assistant": "enabled"
     }
-
-# ==================== EXPENSE CRUD ENDPOINTS (UNCHANGED) ====================
 
 @app.post("/expenses/", response_model=Expense)
 def create_expense(expense: ExpenseCreate, user_id: str = "default"):
-    """Create a new expense with enhanced fields and validation"""
+    """Create a new expense"""
     try:
         expense_dict = expense.dict()
         is_valid, message = validate_expense_data(expense_dict)
@@ -477,20 +546,18 @@ def read_expenses(
     skip: int = 0,
     limit: int = 1000
 ):
-    """Get expenses with advanced filtering and error handling"""
+    """Get expenses with advanced filtering"""
     try:
         expenses = get_expenses(user_id)
         filtered_expenses = expenses
-
         if search and search.strip():
             search_lower = search.lower().strip()
             filtered_expenses = [
                 exp for exp in filtered_expenses
                 if (search_lower in exp["description"].lower()
-                    or search_lower in exp["category"].lower()
-                    or any(search_lower in tag.lower() for tag in exp.get("tags", [])))
+                or search_lower in exp["category"].lower()
+                or any(search_lower in tag.lower() for tag in exp.get("tags", [])))
             ]
-
         if category and category != "All":
             filtered_expenses = [exp for exp in filtered_expenses if exp["category"] == category]
         if start_date:
@@ -509,7 +576,6 @@ def read_expenses(
                 exp for exp in filtered_expenses
                 if any(tag in [t.lower() for t in exp.get("tags", [])] for tag in tag_list)
             ]
-
         filtered_expenses.sort(key=lambda x: x["date"], reverse=True)
         end_index = skip + limit
         return filtered_expenses[skip:end_index]
@@ -518,7 +584,7 @@ def read_expenses(
 
 @app.get("/expenses/{expense_id}", response_model=Expense)
 def read_expense(expense_id: str, user_id: str = "default"):
-    """Get a specific expense by ID with error handling"""
+    """Get a specific expense"""
     try:
         expenses = get_expenses(user_id)
         for expense in expenses:
@@ -532,7 +598,7 @@ def read_expense(expense_id: str, user_id: str = "default"):
 
 @app.put("/expenses/{expense_id}", response_model=Expense)
 def update_expense(expense_id: str, expense_update: ExpenseUpdate, user_id: str = "default"):
-    """Update an existing expense with validation"""
+    """Update an expense"""
     try:
         expenses = get_expenses(user_id)
         for expense in expenses:
@@ -557,7 +623,7 @@ def update_expense(expense_id: str, expense_update: ExpenseUpdate, user_id: str 
 
 @app.delete("/expenses/{expense_id}")
 def delete_expense(expense_id: str, user_id: str = "default"):
-    """Delete an expense by ID with error handling"""
+    """Delete an expense"""
     try:
         expenses = get_expenses(user_id)
         for i, expense in enumerate(expenses):
@@ -573,7 +639,9 @@ def delete_expense(expense_id: str, user_id: str = "default"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting expense: {str(e)}")
 
-# ==================== ANALYTICS ENDPOINTS (UNCHANGED) ====================
+# ============================================================================
+# API ENDPOINTS - ANALYTICS
+# ============================================================================
 
 @app.get("/analytics/overview")
 def get_analytics_overview(
@@ -581,53 +649,35 @@ def get_analytics_overview(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ):
-    """Get comprehensive analytics with enhanced error handling"""
+    """Get comprehensive analytics"""
     try:
         expenses = get_expenses(user_id)
         if start_date:
             expenses = [exp for exp in expenses if exp["date"] >= start_date]
         if end_date:
             expenses = [exp for exp in expenses if exp["date"] <= end_date]
-
         if not expenses:
             return AnalyticsResponse(
-                total_spent=0,
-                average_daily=0,
-                category_breakdown={},
-                monthly_trend=[],
-                weekly_spending=[],
-                priority_distribution={},
-                top_expenses=[],
-                daily_pattern={},
-                spending_velocity={},
-                savings_rate=0
+                total_spent=0, average_daily=0, category_breakdown={},
+                monthly_trend=[], weekly_spending=[], priority_distribution={},
+                top_expenses=[], daily_pattern={}, spending_velocity={}, savings_rate=0
             ).dict()
-
-        total_spent = 0
-        for exp in expenses:
-            try:
-                total_spent += float(exp["amount"])
-            except (ValueError, TypeError):
-                continue
-
+        
+        total_spent = sum(float(exp["amount"]) for exp in expenses if exp.get("amount"))
         try:
             dates = [datetime.fromisoformat(exp["date"]) for exp in expenses]
-            min_date = min(dates)
-            max_date = max(dates)
+            min_date, max_date = min(dates), max(dates)
             days = (max_date - min_date).days + 1
             average_daily = total_spent / days if days > 0 else total_spent
         except:
             average_daily = total_spent / 30
-
+        
         category_breakdown = {}
         for exp in expenses:
-            try:
-                category = exp["category"]
-                amount = float(exp["amount"])
-                category_breakdown[category] = category_breakdown.get(category, 0) + amount
-            except (ValueError, TypeError):
-                continue
-
+            category = exp["category"]
+            amount = float(exp.get("amount", 0))
+            category_breakdown[category] = category_breakdown.get(category, 0) + amount
+        
         monthly_data = {}
         for exp in expenses:
             try:
@@ -637,50 +687,32 @@ def get_analytics_overview(
                 monthly_data[month_key] = monthly_data.get(month_key, 0) + amount
             except:
                 continue
-        monthly_trend = [{"month": month, "amount": amount} for month, amount in sorted(monthly_data.items())]
-
+        monthly_trend = [{"month": month, "amount": amount} for month, amount in monthly_data.items()]
+        
         weekly_data = []
         try:
             end_date_obj = max_date if 'max_date' in locals() else datetime.now()
             for i in range(8):
                 week_start = end_date_obj - timedelta(days=end_date_obj.weekday() + 7*i)
                 week_end = week_start + timedelta(days=6)
-                week_amount = 0
-                for exp in expenses:
-                    try:
-                        exp_date = datetime.fromisoformat(exp["date"]).date()
-                        if week_start.date() <= exp_date <= week_end.date():
-                            week_amount += float(exp["amount"])
-                    except:
-                        continue
+                week_amount = sum(
+                    float(exp["amount"]) for exp in expenses
+                    if datetime.fromisoformat(exp["date"]).date() <= week_end.date()
+                    and datetime.fromisoformat(exp["date"]).date() >= week_start.date()
+                )
                 weekly_data.append({"week": week_start.strftime("%Y-%m-%d"), "amount": week_amount})
             weekly_data.reverse()
         except:
             weekly_data = []
-
+        
         priority_distribution = {}
         for exp in expenses:
             priority = exp.get("priority", "Medium")
-            try:
-                amount = float(exp["amount"])
-                priority_distribution[priority] = priority_distribution.get(priority, 0) + amount
-            except (ValueError, TypeError):
-                continue
-
-        top_expenses = []
-        try:
-            sorted_expenses = sorted(expenses, key=lambda x: float(x.get("amount", 0)), reverse=True)[:5]
-            top_expenses = [
-                {
-                    "description": exp["description"],
-                    "amount": float(exp["amount"]),
-                    "category": exp["category"],
-                    "date": exp["date"]
-                } for exp in sorted_expenses
-            ]
-        except:
-            pass
-
+            amount = float(exp.get("amount", 0))
+            priority_distribution[priority] = priority_distribution.get(priority, 0) + amount
+        
+        top_expenses = sorted(expenses, key=lambda x: float(x.get("amount", 0)), reverse=True)[:10]
+        
         daily_pattern = {}
         for exp in expenses:
             try:
@@ -690,445 +722,457 @@ def get_analytics_overview(
                 daily_pattern[day_name] = daily_pattern.get(day_name, 0) + amount
             except:
                 continue
-
-        spending_velocity = {}
+        
         try:
-            current_month = datetime.now().strftime("%Y-%m")
-            current_week_start = datetime.now() - timedelta(days=datetime.now().weekday())
-            
-            for exp in expenses:
-                exp_date = datetime.fromisoformat(exp["date"])
-                exp_month = exp_date.strftime("%Y-%m")
-                exp_week_start = exp_date - timedelta(days=exp_date.weekday())
-                
-                if exp_month == current_month:
-                    spending_velocity["this_month"] = spending_velocity.get("this_month", 0) + float(exp.get("amount", 0))
-                if exp_week_start == current_week_start.date():
-                    spending_velocity["this_week"] = spending_velocity.get("this_week", 0) + float(exp.get("amount", 0))
-        except:
-            pass
-
-        savings_rate = 0
-        try:
-            if total_spent > 0:
-                savings_rate = min(100, max(0, (1 - (total_spent / (total_spent + 1000))) * 100))
-        except:
-            pass
-
-        return AnalyticsResponse(
-            total_spent=total_spent,
-            average_daily=average_daily,
-            category_breakdown=category_breakdown,
-            monthly_trend=monthly_trend,
-            weekly_spending=weekly_data,
-            priority_distribution=priority_distribution,
-            top_expenses=top_expenses,
-            daily_pattern=daily_pattern,
-            spending_velocity=spending_velocity,
-            savings_rate=savings_rate
-        ).dict()
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error calculating analytics: {str(e)}")
-
-# ==================== VOICE ASSISTANT ENDPOINTS ====================
-
-@app.post("/voice/transcribe")
-def transcribe_audio(request: VoiceTranscribeRequest, user_id: str = "default"):
-    """Transcribe audio using Groq Whisper API"""
-    try:
-        if not groq_client:
-            raise HTTPException(status_code=400, detail="GROQ_API_KEY not configured")
-
-        # Decode base64 audio
-        audio_bytes = base64.b64decode(request.audio_base64)
-        
-        # Create temporary WAV file in memory
-        audio_io = io.BytesIO()
-        with wave.open(audio_io, 'wb') as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(16000)
-            wav_file.writeframes(audio_bytes)
-        
-        audio_io.seek(0)
-        
-        # Transcribe using Groq
-        with audio_io as audio_file:
-            transcript = groq_client.audio.transcriptions.create(
-                file=("audio.wav", audio_file, "audio/wav"),
-                model="whisper-large-v3",
-                language="ta"  # Tamil language
+            today = datetime.now().date()
+            last_7_days_start = today - timedelta(days=7)
+            previous_7_days_start = last_7_days_start - timedelta(days=7)
+            last_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if last_7_days_start <= datetime.fromisoformat(exp["date"]).date() <= today
             )
-        
-        return {
-            "transcription": transcript.text,
-            "language": "ta",
-            "success": True
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Transcription error: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-
-@app.post("/voice/parse-actions")
-def parse_voice_actions(request: VoiceActionRequest, user_id: str = "default"):
-    """Parse Tamil/Tanglish voice input and extract actions"""
-    try:
-        text = request.transcription.strip()
-        if not text:
-            raise HTTPException(status_code=400, detail="Empty transcription")
-
-        actions = []
-        confirmations = []
-        navigation_target = None
-
-        # Split by common separators
-        action_strings = []
-        for sep in [',', 'அப்புறம்', 'and']:
-            if sep in text:
-                parts = text.split(sep)
-                action_strings.extend([p.strip() for p in parts if p.strip()])
-                break
-        
-        if not action_strings:
-            action_strings = [text]
-
-        # Parse each action
-        for action_str in action_strings:
-            action_str_lower = action_str.lower()
-
-            # Navigation commands
-            if 'analytics' in action_str_lower or 'analytics கு போ' in action_str_lower:
-                navigation_target = "Analytics"
-                confirmations.append("Analytics page கு போயிட்டேன்.")
-                continue
-            elif 'dashboard' in action_str_lower or 'dashboard காட்டு' in action_str_lower:
-                navigation_target = "Dashboard"
-                confirmations.append("Dashboard கு போயிட்டேன்.")
-                continue
-            elif ('list' in action_str_lower or 'list காட்டு' in action_str_lower or 
-                  'எதெல்லாம் இருக்கு' in action_str_lower):
-                navigation_target = "View All"
-                confirmations.append("Expense list காட்டிட்டேன்.")
-                continue
-
-            # Extract category and amount
-            category = None
-            amount = None
-            
-            # Common categories in Tamil and English
-            categories = {
-                'food': 'Food & Dining', 'உணவு': 'Food & Dining', 'சாப்பாடு': 'Food & Dining',
-                'travel': 'Transportation', 'பயணம்': 'Transportation', 'வாகனம்': 'Transportation',
-                'auto': 'Transportation', 'bus': 'Transportation',
-                'entertainment': 'Entertainment', 'cinema': 'Entertainment', 'movie': 'Entertainment',
-                'education': 'Education', 'படிப்பு': 'Education', 'கல்வி': 'Education',
-                'books': 'Education', 'புத்தகம்': 'Education',
-                'utilities': 'Utilities', 'மின்சாரம்': 'Utilities', 'water': 'Utilities',
-                'housing': 'Housing', 'வாடை': 'Housing', 'rent': 'Housing',
-                'health': 'Healthcare', 'மருத்துவம்': 'Healthcare',
-                'shopping': 'Entertainment', 'வாங்குவது': 'Entertainment',
+            previous_7_days_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if previous_7_days_start <= datetime.fromisoformat(exp["date"]).date() < last_7_days_start
+            )
+            spending_velocity = {
+                "current_week": last_7_days_spent,
+                "previous_week": previous_7_days_spent,
+                "change_percentage": ((last_7_days_spent - previous_7_days_spent) / previous_7_days_spent * 100) if previous_7_days_spent > 0 else 0
             }
-
-            # Extract category
-            for key, val in categories.items():
-                if key in action_str_lower:
-                    category = val
-                    break
-
-            # Extract amount
-            import re
-            amount_pattern = r'(\d+(?:\.\d{1,2})?)'
-            amount_matches = re.findall(amount_pattern, action_str)
-            if amount_matches:
-                amount = float(amount_matches[0])
-
-            # Determine action type
-            action_type = None
-            tamil_action_keyword = None
-
-            if any(kw in action_str_lower for kw in ['add பண்ணு', 'add செய்', 'add செரு', 'add panna', 'add']):
-                action_type = "add"
-                tamil_action_keyword = "add பண்ணிட்டேன்"
-            elif any(kw in action_str_lower for kw in ['update பண்ணு', 'மாற்று', 'change பண்ணு', 'update']):
-                action_type = "update"
-                tamil_action_keyword = "update பண்ணிட்டேன்"
-            elif any(kw in action_str_lower for kw in ['delete பண்ணு', 'remove பண்ணு', 'last entry delete', 'delete']):
-                action_type = "delete"
-                tamil_action_keyword = "delete ஆயிற்று"
-
-            if action_type and category and amount:
-                actions.append({
-                    "type": action_type,
-                    "category": category,
-                    "amount": amount,
-                    "status": "pending"
-                })
-                confirmation_text = f"{category} ₹{amount} {tamil_action_keyword}."
-                confirmations.append(confirmation_text)
-            elif action_type == "delete":
-                actions.append({
-                    "type": "delete",
-                    "category": None,
-                    "amount": None,
-                    "status": "pending"
-                })
-                confirmations.append("Last entry delete ஆயிற்று.")
-
-        return {
-            "transcription": text,
-            "actions": actions,
-            "confirmations": confirmations,
-            "navigation": navigation_target,
-            "success": True
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Parse error: {e}")
-        raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")
-
-@app.post("/voice/execute-actions")
-def execute_voice_actions(request: VoiceActionRequest, user_id: str = "default"):
-    """Execute parsed actions using existing APIs"""
-    try:
-        text = request.transcription.strip()
+        except:
+            spending_velocity = {"current_week": 0, "previous_week": 0, "change_percentage": 0}
         
-        # First parse actions
-        parse_response = parse_voice_actions(request, user_id)
-        actions = parse_response.get("actions", [])
-        confirmations = parse_response.get("confirmations", [])
-        navigation_target = parse_response.get("navigation")
-
-        executed_actions = []
-        expenses = get_expenses(user_id)
-
-        # Execute each action
-        for action in actions:
-            action_type = action.get("type")
-            category = action.get("category")
-            amount = action.get("amount")
-
-            if action_type == "add" and category and amount:
-                try:
-                    new_expense = {
-                        "id": str(uuid.uuid4()),
-                        "description": category,
-                        "amount": amount,
-                        "category": category,
-                        "date": datetime.now().date().isoformat(),
-                        "priority": "Medium",
-                        "tags": ["voice"],
-                        "notes": "Added via voice assistant",
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }
-                    expenses.append(new_expense)
-                    executed_actions.append({
-                        "type": "add",
-                        "status": "success",
-                        "summary": f"Added {category} expense ₹{amount}"
-                    })
-                except Exception as e:
-                    executed_actions.append({
-                        "type": "add",
-                        "status": "failed",
-                        "summary": str(e)
-                    })
-
-            elif action_type == "delete":
-                try:
-                    if expenses:
-                        deleted = expenses.pop()
-                        executed_actions.append({
-                            "type": "delete",
-                            "status": "success",
-                            "summary": f"Deleted last expense: {deleted.get('description')}"
-                        })
-                    else:
-                        executed_actions.append({
-                            "type": "delete",
-                            "status": "failed",
-                            "summary": "No expenses to delete"
-                        })
-                except Exception as e:
-                    executed_actions.append({
-                        "type": "delete",
-                        "status": "failed",
-                        "summary": str(e)
-                    })
-
-            elif action_type == "update" and category and amount:
-                try:
-                    if expenses:
-                        expenses[-1]["amount"] = amount
-                        expenses[-1]["updated_at"] = datetime.now().isoformat()
-                        executed_actions.append({
-                            "type": "update",
-                            "status": "success",
-                            "summary": f"Updated expense to ₹{amount}"
-                        })
-                    else:
-                        executed_actions.append({
-                            "type": "update",
-                            "status": "failed",
-                            "summary": "No expenses to update"
-                        })
-                except Exception as e:
-                    executed_actions.append({
-                        "type": "update",
-                        "status": "failed",
-                        "summary": str(e)
-                    })
-
-        # Save updated expenses
-        save_user_expenses(user_id, expenses)
-
-        # Generate TTS confirmation
-        tts_base64 = None
         try:
-            if confirmations:
-                confirmation_text = " ".join(confirmations)
-                tts = gTTS(text=confirmation_text, lang='ta', slow=False)
-                tts_io = io.BytesIO()
-                tts.write_to_fp(tts_io)
-                tts_io.seek(0)
-                tts_base64 = base64.b64encode(tts_io.read()).decode('utf-8')
-        except Exception as e:
-            print(f"TTS generation error: {e}")
-
-        return VoiceActionResponse(
-            transcription=text,
-            actions=executed_actions,
-            confirmations=confirmations,
-            navigation=navigation_target,
-            tts_base64=tts_base64
-        )
-
-    except HTTPException:
-        raise
+            monthly_income = 15000
+            current_month = datetime.now().strftime("%Y-%m")
+            current_month_spent = sum(
+                float(exp["amount"]) for exp in expenses
+                if exp["date"].startswith(current_month)
+            )
+            savings_rate = max(0, ((monthly_income - current_month_spent) / monthly_income * 100)) if monthly_income > 0 else 0
+        except:
+            savings_rate = 0
+        
+        return AnalyticsResponse(
+            total_spent=total_spent, average_daily=average_daily,
+            category_breakdown=category_breakdown, monthly_trend=monthly_trend,
+            weekly_spending=weekly_data, priority_distribution=priority_distribution,
+            top_expenses=top_expenses, daily_pattern=daily_pattern,
+            spending_velocity=spending_velocity, savings_rate=savings_rate
+        ).dict()
     except Exception as e:
-        print(f"Execution error: {e}")
-        raise HTTPException(status_code=500, detail=f"Action execution failed: {str(e)}")
+        print(f"Error in analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics error: {str(e)}")
 
-# ==================== BUDGET ENDPOINTS (UNCHANGED) ====================
+# ============================================================================
+# API ENDPOINTS - BUDGETS
+# ============================================================================
 
-@app.get("/budgets/")
-def get_budgets(user_id: str = "default"):
-    """Get all budgets for a user"""
+@app.get("/budgets/alerts")
+def get_budget_alerts(user_id: str = "default"):
+    """Get budget alerts"""
     try:
-        budgets = load_budgets()
-        return budgets.get(user_id, {})
+        expenses = get_expenses(user_id)
+        current_month = datetime.now().strftime("%Y-%m")
+        monthly_expenses = {}
+        for exp in expenses:
+            if exp["date"].startswith(current_month):
+                category = exp["category"]
+                amount = float(exp["amount"])
+                monthly_expenses[category] = monthly_expenses.get(category, 0) + amount
+        
+        user_budgets = load_budgets().get(user_id, {})
+        default_budgets = {
+            "Food & Dining": 6000, "Transportation": 2000, "Entertainment": 1500,
+            "Utilities": 1500, "Shopping": 2000, "Healthcare": 1000,
+            "Travel": 3000, "Education": 3000, "Housing": 8000, "Other": 2000
+        }
+        budgets = {**default_budgets, **user_budgets}
+        
+        alerts = []
+        for category, spent in monthly_expenses.items():
+            budget = budgets.get(category, 5000)
+            percentage = (spent / budget) * 100 if budget > 0 else 0
+            if percentage >= 90:
+                alert_level = "Critical"
+            elif percentage >= 75:
+                alert_level = "Warning"
+            elif percentage >= 50:
+                alert_level = "Info"
+            else:
+                continue
+            alerts.append({
+                "category": category, "spent": spent, "budget": budget,
+                "percentage": percentage, "alert_level": alert_level
+            })
+        return alerts
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching budgets: {str(e)}")
+        print(f"Error in budget alerts: {e}")
+        return []
 
-@app.post("/budgets/")
-def set_budget(budgets_data: Dict[str, float], user_id: str = "default"):
-    """Set budgets for a user"""
+@app.post("/budgets/{user_id}")
+def save_user_budgets(user_id: str, budgets: Dict[str, float]):
+    """Save budgets for a user"""
     try:
-        budgets = load_budgets()
-        budgets[user_id] = budgets_data
-        if save_budgets(budgets):
-            return {"message": "Budgets updated successfully", "budgets": budgets_data}
+        if not isinstance(budgets, dict):
+            raise HTTPException(status_code=400, detail="Invalid budgets format")
+        for category, amount in budgets.items():
+            try:
+                float(amount)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail=f"Invalid amount for category {category}")
+        data = load_budgets()
+        data[user_id] = budgets
+        if save_budgets(data):
+            return {"message": "Budgets saved successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to save budgets")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error setting budgets: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving budgets: {str(e)}")
 
-@app.get("/budget-alerts/")
-def get_budget_alerts(user_id: str = "default"):
-    """Get budget alerts"""
+@app.get("/budgets/{user_id}")
+def get_user_budgets(user_id: str):
+    """Get budgets for a user"""
+    try:
+        data = load_budgets()
+        return data.get(user_id, {})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading budgets: {str(e)}")
+
+# ============================================================================
+# API ENDPOINTS - REPORTS
+# ============================================================================
+
+@app.get("/reports/export")
+def export_expenses_report(
+    user_id: str = "default",
+    format: str = "json",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """Export expenses"""
     try:
         expenses = get_expenses(user_id)
-        budgets = load_budgets().get(user_id, {})
-        alerts = []
-
-        category_spending = {}
-        for exp in expenses:
-            category = exp.get("category", "Other")
-            amount = float(exp.get("amount", 0))
-            category_spending[category] = category_spending.get(category, 0) + amount
-
-        for category, budget_amount in budgets.items():
-            spent = category_spending.get(category, 0)
-            percentage = (spent / budget_amount * 100) if budget_amount > 0 else 0
-            
-            if percentage >= 80:
-                alert_level = "critical" if percentage >= 100 else "warning"
-                alerts.append({
-                    "category": category,
-                    "spent": spent,
-                    "budget": budget_amount,
-                    "percentage": percentage,
-                    "alert_level": alert_level
-                })
-
-        return {"alerts": alerts}
+        if start_date:
+            expenses = [exp for exp in expenses if exp["date"] >= start_date]
+        if end_date:
+            expenses = [exp for exp in expenses if exp["date"] <= end_date]
+        if format == "json":
+            return expenses
+        elif format == "csv":
+            csv_lines = ["ID,Date,Category,Description,Amount,Priority,Tags,Notes"]
+            for exp in expenses:
+                try:
+                    tags = exp.get("tags", [])
+                    tags_str = ";".join(tags) if tags else ""
+                    notes_str = str(exp.get("notes", "")).replace('"', '""')
+                    description_str = str(exp.get("description", "")).replace('"', '""')
+                    csv_lines.append(
+                        f'{exp["id"]},{exp["date"]},{exp["category"]},'
+                        f'"{description_str}",{exp["amount"]},{exp.get("priority", "Medium")},'
+                        f'"{tags_str}","{notes_str}"'
+                    )
+                except Exception as e:
+                    print(f"Error formatting expense for CSV: {e}")
+                    continue
+            return {"csv": "\n".join(csv_lines)}
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported format")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching budget alerts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
 
-# ==================== USER ENDPOINTS (UNCHANGED) ====================
+# ============================================================================
+# API ENDPOINTS - USERS
+# ============================================================================
 
-@app.post("/users/")
-def create_user(user: UserCreate):
-    """Create a new user"""
+@app.post("/users/register")
+def register_user(user: UserCreate):
+    """Register a new user"""
     try:
-        user_id = str(uuid.uuid4())
+        if not user.phone_number or not user.phone_number.strip():
+            raise HTTPException(status_code=400, detail="Phone number is required")
+        if not user.password or len(user.password) != 6 or not user.password.isdigit():
+            raise HTTPException(status_code=400, detail="Password must be 6 digits")
+        users = get_users()
+        for existing_user in users.values():
+            if existing_user["phone_number"] == user.phone_number:
+                raise HTTPException(status_code=400, detail="User already exists")
         user_data = {
-            "id": user_id,
+            "id": str(uuid.uuid4()),
             "phone_number": user.phone_number,
             "password": user.password,
             "created_at": datetime.now().isoformat()
         }
         if save_user(user_data):
-            return {"message": "User created successfully", "user_id": user_id}
+            save_user_expenses(user_data["id"], [])
+            return {"message": "User registered successfully", "user_id": user_data["id"]}
         else:
-            raise HTTPException(status_code=500, detail="Failed to create user")
+            raise HTTPException(status_code=500, detail="Failed to register user")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Registration error: {str(e)}")
 
-@app.get("/users/")
-def list_users():
-    """List all users (admin only)"""
+@app.post("/users/login")
+def login_user(user: UserCreate):
+    """Login user"""
     try:
-        users = get_users()
-        return {"users": users}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching users: {str(e)}")
-
-@app.post("/password-reset/")
-def reset_password(request: PasswordResetRequest):
-    """Reset user password"""
-    try:
+        if not user.phone_number or not user.password:
+            raise HTTPException(status_code=400, detail="Phone number and password are required")
         users = get_users()
         for user_id, user_data in users.items():
-            if user_data.get("phone_number") == request.phone_number:
-                if request.admin_code == "ADMIN_SECRET_CODE":
-                    user_data["password"] = request.new_password
-                    if save_user(user_data):
-                        return {"message": "Password reset successfully"}
-                    else:
-                        raise HTTPException(status_code=500, detail="Failed to reset password")
-                else:
-                    raise HTTPException(status_code=401, detail="Invalid admin code")
-        raise HTTPException(status_code=404, detail="User not found")
+            if (user_data["phone_number"] == user.phone_number and
+                user_data["password"] == user.password):
+                return {"message": "Login successful", "user_id": user_id}
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error resetting password: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Login error: {str(e)}")
 
-# ==================== INITIALIZATION ====================
+@app.post("/users/forgot-password")
+def forgot_password(reset_request: PasswordResetRequest):
+    """Reset user password"""
+    try:
+        if reset_request.admin_code != "2139":
+            raise HTTPException(status_code=401, detail="Invalid admin code")
+        if not reset_request.new_password or len(reset_request.new_password) != 6 or not reset_request.new_password.isdigit():
+            raise HTTPException(status_code=400, detail="New password must be 6 digits")
+        users = get_users()
+        user_found = False
+        for user_id, user_data in users.items():
+            if user_data["phone_number"] == reset_request.phone_number:
+                user_data["password"] = reset_request.new_password
+                user_found = True
+                break
+        if not user_found:
+            raise HTTPException(status_code=404, detail="User not found")
+        if save_data(USERS_FILE, users):
+            return {"message": "Password reset successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to reset password")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Password reset error: {str(e)}")
 
-@app.on_event("startup")
-def startup_event():
-    """Initialize app on startup"""
-    print("🚀 Expense Tracker API starting up...")
+@app.get("/users/{user_id}")
+def get_user(user_id: str):
+    """Get user by ID"""
+    try:
+        users = get_users()
+        if user_id in users:
+            user_data = users[user_id].copy()
+            user_data.pop("password", None)
+            return user_data
+        raise HTTPException(status_code=404, detail="User not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching user: {str(e)}")
+
+# ============================================================================
+# API ENDPOINTS - VOICE ASSISTANT
+# ============================================================================
+
+@app.post("/voice/transcribe")
+def transcribe_voice(request: VoiceTranscriptionRequest):
+    """Transcribe voice audio using Groq Whisper API"""
+    try:
+        if not os.environ.get("GROQ_API_KEY"):
+            return {"error": "Groq API key not configured", "transcription": "Voice feature not available"}
+        
+        audio_bytes = base64.b64decode(request.audio_base64)
+        with BytesIO(audio_bytes) as audio_file:
+            transcript = groq_client.audio.transcriptions.create(
+                file=("audio.wav", audio_file, "audio/wav"),
+                model="whisper-large-v3",
+                language="ta"
+            )
+        
+        return {"transcription": transcript.text, "status": "success"}
+    except Exception as e:
+        return {"transcription": f"Error: {str(e)}", "status": "failed"}
+
+@app.post("/voice/parse-actions", response_model=List[VoiceAction])
+def parse_voice_actions(request_data: dict):
+    """Parse transcribed voice text into actionable commands"""
+    try:
+        text = request_data.get("transcription", "")
+        parsed_actions = parse_tamil_voice_command(text)
+        
+        actions = []
+        for action_data in parsed_actions:
+            action = VoiceAction(
+                type=action_data.get("type", "unknown"),
+                category=action_data.get("category"),
+                amount=action_data.get("amount"),
+                description=action_data.get("description"),
+                page=action_data.get("page"),
+                status=action_data.get("status", "pending"),
+                summary=f"{action_data.get('type', 'unknown')} action"
+            )
+            actions.append(action)
+        
+        return actions
+    except Exception as e:
+        return [VoiceAction(type="error", status="failed", summary=f"Parsing error: {str(e)}")]
+
+@app.post("/voice/execute-actions", response_model=VoiceExecutionResponse)
+def execute_voice_actions(
+    transcription: str,
+    user_id: str = "default",
+    category: Optional[str] = None,
+    amount: Optional[float] = None,
+    description: Optional[str] = None
+):
+    """Execute parsed voice actions"""
+    try:
+        parsed_actions = parse_tamil_voice_command(transcription)
+        
+        actions = []
+        confirmations = []
+        navigation = None
+        
+        for action_data in parsed_actions:
+            action = VoiceAction(
+                type=action_data.get("type"),
+                category=action_data.get("category") or category,
+                amount=action_data.get("amount") or amount,
+                description=action_data.get("description") or description or "Voice expense",
+                page=action_data.get("page")
+            )
+            
+            if action.type == "add" and action.amount and action.category:
+                try:
+                    new_expense = ExpenseCreate(
+                        description=action.description or f"{action.category} expense",
+                        amount=action.amount,
+                        category=action.category,
+                        date=datetime.now().isoformat(),
+                        priority="Medium",
+                        tags=["voice"]
+                    )
+                    created = create_expense(new_expense, user_id)
+                    action.status = "success"
+                    action.summary = f"Added ₹{action.amount} to {action.category}"
+                except Exception as e:
+                    action.status = "failed"
+                    action.summary = f"Failed to add expense: {str(e)}"
+            
+            elif action.type == "delete":
+                try:
+                    expenses = get_expenses(user_id)
+                    if expenses:
+                        last_id = expenses[-1]["id"]
+                        delete_expense(last_id, user_id)
+                        action.status = "success"
+                        action.summary = "Last expense deleted"
+                    else:
+                        action.status = "failed"
+                        action.summary = "No expenses to delete"
+                except Exception as e:
+                    action.status = "failed"
+                    action.summary = f"Failed to delete: {str(e)}"
+            
+            elif action.type == "navigate":
+                navigation = action.page or "Dashboard"
+                action.status = "success"
+                action.summary = f"Navigating to {navigation}"
+            
+            elif action.type == "list":
+                action.type = "navigate"
+                navigation = "View All"
+                action.status = "success"
+                action.summary = "Showing all expenses"
+            
+            else:
+                action.status = "pending"
+                action.summary = "Action recognized but not executed"
+            
+            confirmation = generate_tamil_confirmation({
+                "type": action.type,
+                "category": action.category,
+                "amount": action.amount,
+                "page": action.page
+            })
+            confirmations.append(confirmation)
+            actions.append(action)
+        
+        tts_audio_base64 = ""
+        try:
+            full_confirmation = " ".join(confirmations)
+            tts = gTTS(full_confirmation, lang='ta', slow=False)
+            audio_buffer = BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            tts_audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
+        except Exception as e:
+            print(f"TTS generation failed: {e}")
+        
+        return VoiceExecutionResponse(
+            transcription=transcription,
+            actions=actions,
+            confirmations=confirmations,
+            navigation=navigation,
+            tts_audio_base64=tts_audio_base64
+        )
+    
+    except Exception as e:
+        return VoiceExecutionResponse(
+            transcription=transcription,
+            actions=[],
+            confirmations=[f"Error: {str(e)}"],
+            navigation=None,
+            tts_audio_base64=""
+        )
+
+# ============================================================================
+# SAMPLE DATA & INITIALIZATION
+# ============================================================================
+
+@app.post("/sample-data/initialize")
+def initialize_sample_data_endpoint(user_id: str = "default"):
+    """Initialize sample data endpoint"""
+    try:
+        success = initialize_sample_data(user_id)
+        if success:
+            return {"message": "Sample data initialized successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to initialize sample data")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sample data error: {str(e)}")
+
+@app.get("/admin/download-db")
+def download_database(admin_code: str):
+    """Download entire database (admin function)"""
+    try:
+        if admin_code != "2139":
+            raise HTTPException(status_code=401, detail="Invalid admin code")
+        expenses_data = load_data(DATA_FILE)
+        users_data = get_users()
+        budgets_data = load_budgets()
+        return {
+            "expenses": expenses_data,
+            "users": users_data,
+            "budgets": budgets_data,
+            "exported_at": datetime.now().isoformat(),
+            "total_users": len(users_data),
+            "total_expense_records": sum(len(expenses) for expenses in expenses_data.values())
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database export error: {str(e)}")
+
+# Initialize sample data when backend starts
+try:
     initialize_sample_data()
-    print("✅ API ready")
+except Exception as e:
+    print(f"Failed to initialize sample data: {e}")
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
