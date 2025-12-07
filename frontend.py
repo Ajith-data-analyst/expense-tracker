@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # Backend URL
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
 
 # Initialize session state
 if 'user_id' not in st.session_state:
