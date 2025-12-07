@@ -12,13 +12,6 @@ from io import BytesIO
 from gtts import gTTS
 import re
 
-# Import Groq with better error handling
-try:
-    from groq import Groq
-    groq_available = True
-except ImportError:
-    groq_available = False
-
 app = FastAPI(
     title="Enhanced Expense Tracker API with Voice Assistant",
     version="3.0.0",
@@ -34,16 +27,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Groq client safely
+# Global variable for lazy Groq client initialization
 groq_client = None
-if groq_available:
-    try:
-        api_key = os.environ.get("GROQ_API_KEY", "")
-        if api_key:
-            groq_client = Groq(api_key=api_key)
-    except Exception as e:
-        print(f"Warning: Could not initialize Groq client: {e}")
-        groq_client = None
+
+def get_groq_client():
+    """Lazy initialization of Groq client - only create when needed"""
+    global groq_client
+    if groq_client is None:
+        try:
+            from groq import Groq
+            api_key = os.environ.get("GROQ_API_KEY", "")
+            if api_key:
+                groq_client = Groq(api_key=api_key)
+        except Exception as e:
+            print(f"Warning: Could not initialize Groq client: {e}")
+            groq_client = None
+    return groq_client
 
 # Data storage files
 DATA_FILE = "expenses_data.json"
@@ -509,20 +508,25 @@ def generate_tamil_confirmation(action: dict) -> str:
         return "Command execute ஆகலை. மீண்டும் முயற்சி செய்யுங்கள்."
 
 # ============================================================================
-# API ENDPOINTS - EXPENSES (CRUD)
+# API ENDPOINTS - ROOT
 # ============================================================================
 
 @app.get("/")
 def read_root():
+    client = get_groq_client()
     return {
         "message": "Enhanced Expense Tracker API with Voice Assistant",
         "version": "3.0.0",
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
-        "status": "healthy",
-        "voice_assistant": "enabled",
-        "groq_available": groq_client is not None
+        "status": "healthy ✅",
+        "voice_assistant": "available" if client else "disabled",
+        "groq_configured": client is not None
     }
+
+# ============================================================================
+# API ENDPOINTS - EXPENSES (CRUD)
+# ============================================================================
 
 @app.post("/expenses/", response_model=Expense)
 def create_expense(expense: ExpenseCreate, user_id: str = "default"):
@@ -995,13 +999,14 @@ def get_user(user_id: str):
 def transcribe_voice(request: VoiceTranscriptionRequest):
     """Transcribe voice audio using Groq Whisper API"""
     try:
-        if not groq_client:
-            return {"error": "Groq API not configured", "transcription": "Voice feature not available", "status": "failed"}
+        client = get_groq_client()
+        if not client:
+            return {"error": "Groq API not configured", "transcription": "Voice feature not available", "status": "unavailable"}
         
         try:
             audio_bytes = base64.b64decode(request.audio_base64)
             with BytesIO(audio_bytes) as audio_file:
-                transcript = groq_client.audio.transcriptions.create(
+                transcript = client.audio.transcriptions.create(
                     file=("audio.wav", audio_file, "audio/wav"),
                     model="whisper-large-v3",
                     language="ta"
