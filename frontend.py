@@ -1,618 +1,548 @@
 import streamlit as st
 import requests
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import base64
-import os
 import json
+import os
 
-# Page configuration
-st.set_page_config(
-    page_title="Expense Tracker with Voice Assistant",
-    page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Backend URL
+# Configuration - Use environment variable for backend URL
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
+CURRENCY = "₹"  # Indian Rupee
 
-# Initialize session state
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = "default"
-if 'page' not in st.session_state:
-    st.session_state.page = "Dashboard"
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def get_expenses():
-    """Fetch all expenses"""
-    try:
-        response = requests.get(
-            f"{BACKEND_URL}/expenses/",
-            params={"user_id": st.session_state.user_id}
-        )
-        if response.status_code == 200:
-            return response.json()
-        return []
-    except Exception as e:
-        st.error(f"Error fetching expenses: {e}")
-        return []
-
-def create_expense(description, amount, category, date, priority, tags, notes):
-    """Create new expense"""
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/expenses/",
-            json={
-                "description": description,
-                "amount": float(amount),
-                "category": category,
-                "date": date,
-                "priority": priority,
-                "tags": tags,
-                "notes": notes
-            },
-            params={"user_id": st.session_state.user_id}
-        )
-        if response.status_code == 200:
-            st.success("Expense added successfully!")
-            return True
-        else:
-            st.error(f"Error: {response.json().get('detail', 'Unknown error')}")
-            return False
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return False
-
-def delete_expense(expense_id):
-    """Delete an expense"""
-    try:
-        response = requests.delete(
-            f"{BACKEND_URL}/expenses/{expense_id}",
-            params={"user_id": st.session_state.user_id}
-        )
-        if response.status_code == 200:
-            st.success("Expense deleted!")
-            return True
-        else:
-            st.error("Error deleting expense")
-            return False
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return False
-
-def get_analytics():
-    """Fetch analytics"""
-    try:
-        response = requests.get(
-            f"{BACKEND_URL}/analytics/overview",
-            params={"user_id": st.session_state.user_id}
-        )
-        if response.status_code == 200:
-            return response.json()
-        return None
-    except Exception as e:
-        st.error(f"Error fetching analytics: {e}")
-        return None
-
-def get_budget_alerts():
-    """Fetch budget alerts"""
-    try:
-        response = requests.get(
-            f"{BACKEND_URL}/budgets/alerts",
-            params={"user_id": st.session_state.user_id}
-        )
-        if response.status_code == 200:
-            return response.json()
-        return []
-    except Exception as e:
-        return []
-
-def get_user_budgets():
-    """Fetch user budgets"""
-    try:
-        response = requests.get(
-            f"{BACKEND_URL}/budgets/{st.session_state.user_id}"
-        )
-        if response.status_code == 200:
-            return response.json()
-        return {}
-    except Exception as e:
-        return {}
-
-def save_budgets(budgets):
-    """Save user budgets"""
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/budgets/{st.session_state.user_id}",
-            json=budgets
-        )
-        if response.status_code == 200:
-            st.success("Budgets saved!")
-            return True
-        else:
-            st.error("Error saving budgets")
-            return False
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return False
-
-# ============================================================================
-# PAGE: DASHBOARD
-# ============================================================================
-
-def dashboard_page():
-    st.title("📊 Dashboard")
-    st.markdown("---")
+class VoiceAssistant:
+    """Voice Assistant for Expense Tracker"""
+    def __init__(self, backend_url):
+        self.backend_url = backend_url
     
-    analytics = get_analytics()
-    if not analytics:
-        st.info("No expenses yet. Add some expenses to see analytics!")
-        return
-    
-    # Key metrics
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Spent", f"₹{analytics['total_spent']:.2f}")
-    with col2:
-        st.metric("Daily Average", f"₹{analytics['average_daily']:.2f}")
-    with col3:
-        st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
-    with col4:
-        alerts = get_budget_alerts()
-        st.metric("Budget Alerts", len(alerts))
-    
-    st.markdown("---")
-    
-    # Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Category breakdown
-        if analytics['category_breakdown']:
-            fig = px.pie(
-                values=list(analytics['category_breakdown'].values()),
-                names=list(analytics['category_breakdown'].keys()),
-                title="Spending by Category"
+    def process_command(self, command: str, user_id: str = "default") -> dict:
+        """Process voice command via backend"""
+        try:
+            response = requests.post(
+                f"{self.backend_url}/voice/process",
+                json={"command": command, "user_id": user_id},
+                timeout=10
             )
-            st.plotly_chart(fig, use_container_width=True)
+            return response.json()
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Voice processing error: {str(e)}",
+                "action": "error"
+            }
     
-    with col2:
-        # Monthly trend
-        if analytics['monthly_trend']:
-            df = pd.DataFrame(analytics['monthly_trend'])
-            fig = px.line(df, x='month', y='amount', title="Monthly Spending Trend", markers=True)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Weekly spending
-    if analytics['weekly_spending']:
-        df = pd.DataFrame(analytics['weekly_spending'])
-        fig = px.bar(df, x='week', y='amount', title="Weekly Spending")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Budget alerts
-    if get_budget_alerts():
-        st.subheader("⚠️ Budget Alerts")
-        alerts = get_budget_alerts()
-        for alert in alerts:
-            color = "red" if alert['alert_level'] == "Critical" else "orange" if alert['alert_level'] == "Warning" else "blue"
-            st.markdown(f"**:{color}[{alert['category']}]** - {alert['percentage']:.1f}% of budget (₹{alert['spent']:.2f} / ₹{alert['budget']:.2f})")
+    def get_commands_help(self) -> dict:
+        """Get available voice commands"""
+        try:
+            response = requests.get(
+                f"{self.backend_url}/voice/commands",
+                timeout=10
+            )
+            return response.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-# ============================================================================
-# PAGE: ADD EXPENSE
-# ============================================================================
-
-def add_expense_page():
-    st.title("➕ Add Expense")
-    st.markdown("---")
+class EnhancedExpenseTracker:
+    def __init__(self, backend_url):
+        self.backend_url = backend_url
+        self.voice_assistant = VoiceAssistant(backend_url)
+        self.setup_page()
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        description = st.text_input("Description", placeholder="e.g., Lunch at restaurant")
-        category = st.selectbox(
-            "Category",
-            ["Food & Dining", "Transportation", "Shopping", "Entertainment", "Utilities", "Education", "Healthcare", "Housing", "Other"]
-        )
-        date = st.date_input("Date", datetime.now())
-    
-    with col2:
-        amount = st.number_input("Amount (₹)", min_value=0.0, step=1.0)
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
-        tags = st.multiselect("Tags", ["food", "travel", "shopping", "entertainment", "study", "other"])
-    
-    notes = st.text_area("Notes", placeholder="Add any additional notes", height=100)
-    
-    if st.button("💾 Add Expense", use_container_width=True, type="primary"):
-        if description and amount > 0:
-            if create_expense(description, amount, category, date.isoformat(), priority, tags, notes):
-                st.rerun()
-        else:
-            st.error("Please enter description and amount")
-
-# ============================================================================
-# PAGE: VIEW ALL
-# ============================================================================
-
-def view_all_page():
-    st.title("📋 View All Expenses")
-    st.markdown("---")
-    
-    # Filters
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        category_filter = st.multiselect(
-            "Category",
-            ["Food & Dining", "Transportation", "Shopping", "Entertainment", "Utilities", "Education", "Healthcare", "Housing", "Other"],
-            default=[]
-        )
-    
-    with col2:
-        priority_filter = st.multiselect("Priority", ["Low", "Medium", "High"], default=[])
-    
-    with col3:
-        min_amount = st.number_input("Min Amount (₹)", min_value=0.0, value=0.0)
-    
-    with col4:
-        max_amount = st.number_input("Max Amount (₹)", min_value=0.0, value=100000.0)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date", datetime.now() - timedelta(days=90))
-    with col2:
-        end_date = st.date_input("End Date", datetime.now())
-    
-    # Get expenses
-    expenses = get_expenses()
-    
-    # Apply filters
-    filtered = expenses
-    if category_filter:
-        filtered = [e for e in filtered if e['category'] in category_filter]
-    if priority_filter:
-        filtered = [e for e in filtered if e['priority'] in priority_filter]
-    filtered = [e for e in filtered if min_amount <= float(e['amount']) <= max_amount]
-    filtered = [e for e in filtered if e['date'] >= start_date.isoformat() and e['date'] <= end_date.isoformat()]
-    
-    # Display table
-    if filtered:
-        df = pd.DataFrame(filtered)
-        df = df[['date', 'category', 'description', 'amount', 'priority', 'tags']]
-        df['amount'] = df['amount'].apply(lambda x: f"₹{x:.2f}")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # Delete option
-        st.subheader("Delete Expense")
-        expense_to_delete = st.selectbox(
-            "Select expense to delete",
-            [f"{e['date']} - {e['category']} - ₹{e['amount']}" for e in filtered],
-            key="delete_select"
+    def setup_page(self):
+        """Configure Streamlit page settings with enhanced styling"""
+        st.set_page_config(
+            page_title="💰 Super Expense Tracker Pro - INR",
+            page_icon="💸",
+            layout="wide",
+            initial_sidebar_state="expanded"
         )
         
-        if st.button("🗑️ Delete", type="secondary"):
-            idx = [f"{e['date']} - {e['category']} - ₹{e['amount']}" for e in filtered].index(expense_to_delete)
-            if delete_expense(filtered[idx]['id']):
-                st.rerun()
-    else:
-        st.info("No expenses found matching the filters")
-
-# ============================================================================
-# PAGE: ANALYTICS
-# ============================================================================
-
-def analytics_page():
-    st.title("📈 Analytics")
-    st.markdown("---")
-    
-    analytics = get_analytics()
-    if not analytics:
-        st.info("No data available for analytics")
-        return
-    
-    # Summary
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("Total Spent", f"₹{analytics['total_spent']:.2f}")
-    with col2:
-        st.metric("Avg Daily", f"₹{analytics['average_daily']:.2f}")
-    with col3:
-        st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
-    with col4:
-        if analytics['spending_velocity']['previous_week'] > 0:
-            change = analytics['spending_velocity']['change_percentage']
-            st.metric("Week Change", f"{change:.1f}%")
-    with col5:
-        st.metric("Top Expense", f"₹{max([e['amount'] for e in analytics['top_expenses']], default=0):.2f}")
-    
-    st.markdown("---")
-    
-    # Visualizations
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if analytics['category_breakdown']:
-            fig = px.pie(
-                values=list(analytics['category_breakdown'].values()),
-                names=list(analytics['category_breakdown'].keys()),
-                title="Spending Distribution"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        if analytics['priority_distribution']:
-            fig = px.bar(
-                x=list(analytics['priority_distribution'].keys()),
-                y=list(analytics['priority_distribution'].values()),
-                title="Spending by Priority",
-                labels={'x': 'Priority', 'y': 'Amount (₹)'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if analytics['monthly_trend']:
-            df = pd.DataFrame(analytics['monthly_trend'])
-            fig = px.line(df, x='month', y='amount', title="Monthly Trend", markers=True)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        if analytics['daily_pattern']:
-            days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            daily = {k: v for k, v in analytics['daily_pattern'].items() if k in days_order}
-            daily = {k: daily.get(k, 0) for k in days_order}
-            fig = px.bar(
-                x=list(daily.keys()),
-                y=list(daily.values()),
-                title="Spending by Day of Week",
-                labels={'x': 'Day', 'y': 'Amount (₹)'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Top expenses
-    if analytics['top_expenses']:
-        st.subheader("💸 Top 10 Expenses")
-        top_df = pd.DataFrame(analytics['top_expenses'][:10])
-        top_df = top_df[['date', 'category', 'description', 'amount']]
-        top_df['amount'] = top_df['amount'].apply(lambda x: f"₹{x:.2f}")
-        st.dataframe(top_df, use_container_width=True, hide_index=True)
-
-# ============================================================================
-# PAGE: BUDGET MANAGER
-# ============================================================================
-
-def budget_manager_page():
-    st.title("💰 Budget Manager")
-    st.markdown("---")
-    
-    # Get current budgets
-    budgets = get_user_budgets()
-    default_budgets = {
-        "Food & Dining": 6000, "Transportation": 2000, "Entertainment": 1500,
-        "Utilities": 1500, "Shopping": 2000, "Healthcare": 1000,
-        "Travel": 3000, "Education": 3000, "Housing": 8000, "Other": 2000
-    }
-    
-    all_budgets = {**default_budgets, **budgets}
-    
-    # Edit budgets
-    st.subheader("Edit Monthly Budgets")
-    edited_budgets = {}
-    
-    cols = st.columns(3)
-    for idx, (category, default_amount) in enumerate(all_budgets.items()):
-        with cols[idx % 3]:
-            edited_budgets[category] = st.number_input(
-                category,
-                value=float(default_amount),
-                min_value=0.0,
-                step=100.0,
-                key=f"budget_{category}"
-            )
-    
-    if st.button("💾 Save Budgets", use_container_width=True, type="primary"):
-        if save_budgets(edited_budgets):
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Show alerts
-    alerts = get_budget_alerts()
-    if alerts:
-        st.subheader("⚠️ Budget Status")
-        for alert in alerts:
-            if alert['alert_level'] == 'Critical':
-                st.error(f"🔴 **{alert['category']}**: {alert['percentage']:.1f}% - ₹{alert['spent']:.2f} / ₹{alert['budget']:.2f}")
-            elif alert['alert_level'] == 'Warning':
-                st.warning(f"🟡 **{alert['category']}**: {alert['percentage']:.1f}% - ₹{alert['spent']:.2f} / ₹{alert['budget']:.2f}")
-            else:
-                st.info(f"🔵 **{alert['category']}**: {alert['percentage']:.1f}% - ₹{alert['spent']:.2f} / ₹{alert['budget']:.2f}")
-    else:
-        st.success("✅ All budgets are on track!")
-
-# ============================================================================
-# PAGE: VOICE ASSISTANT
-# ============================================================================
-
-def voice_assistant_page():
-    st.title("🗣️ Voice Assistant")
-    st.markdown("---")
-    
-    with st.expander("📖 How to Use Voice Commands", expanded=True):
+        # Custom CSS for enhanced styling and responsiveness
         st.markdown("""
-        **🎤 Voice Command Examples:**
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            
+            .main {
+                background-color: #f8f9fa;
+            }
+            
+            .stApp {
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            }
+            
+            .title-text {
+                color: #2d3748;
+                text-align: center;
+                margin-bottom: 2rem;
+                font-size: 2.5rem;
+                font-weight: 700;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            
+            .metric-card {
+                background: white;
+                border-radius: 12px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                margin: 10px 0;
+                border-left: 5px solid #667eea;
+            }
+            
+            .expense-item {
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin: 8px 0;
+                border-left: 4px solid #667eea;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            
+            .budget-alert {
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin: 10px 0;
+                border-left: 4px solid #f56565;
+            }
+            
+            .success-message {
+                background: #c6f6d5;
+                color: #22543d;
+                padding: 12px;
+                border-radius: 8px;
+                margin: 10px 0;
+                border-left: 4px solid #48bb78;
+            }
+            
+            .error-message {
+                background: #fed7d7;
+                color: #742a2a;
+                padding: 12px;
+                border-radius: 8px;
+                margin: 10px 0;
+                border-left: 4px solid #f56565;
+            }
+            
+            .voice-button {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            
+            .voice-button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 12px rgba(102, 126, 234, 0.4);
+            }
+            
+            .voice-button:active {
+                transform: translateY(0);
+            }
+        </style>
+        """, unsafe_allow_html=True)
         
-        **Add Expense:**
-        - "Food 200 add பண்ணு" → Adds ₹200 to Food & Dining
-        - "travel 150 add செய்" → Adds ₹150 to Transportation
-        
-        **Update Expense:**
-        - "travel 150 update பண்ணு" → Updates Transportation to ₹150
-        
-        **Delete Expense:**
-        - "last entry delete" → Deletes most recent expense
-        
-        **Navigate:**
-        - "analytics கு போ" → Goes to Analytics
-        - "dashboard" → Opens Dashboard
-        - "list காட்டு" → Shows all expenses
-        
-        **Supported Categories:**
-        Food, Travel, Shopping, Entertainment, Education, Utilities, Healthcare, Housing
-        
-        **Languages:** Tamil (தமிழ்), Tanglish (English + Tamil mix)
-        """)
+        st.markdown(f'<h1 class="title-text">💰 Enhanced Expense Tracker Pro with Voice</h1>', unsafe_allow_html=True)
     
-    col1, col2 = st.columns([2, 1])
+    def get_user_id(self) -> str:
+        """Get current user ID"""
+        return st.session_state.get("user_id", "default")
     
-    with col1:
-        st.subheader("🎤 Enter Voice Command")
-        voice_input = st.text_input(
-            "Enter your voice command (Tamil/Tanglish):",
-            placeholder="e.g., Food 200 add பண்ணு",
-            key="voice_command_input"
-        )
+    def show_voice_assistant_widget(self):
+        """Display voice assistant widget and controls"""
+        st.subheader("🎤 Voice Assistant Control Panel")
         
-        if st.button("🎙️ Execute Command", use_container_width=True, type="primary"):
-            if voice_input:
-                with st.spinner("Processing command..."):
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            voice_input = st.text_input(
+                "🗣️ Enter your command or voice text:",
+                placeholder="e.g., 'Add 500 for food' or 'Show my expenses'",
+                key="voice_command_input"
+            )
+        
+        with col2:
+            submit_voice = st.button("📤 Process Command", key="submit_voice")
+        
+        with col3:
+            show_help = st.button("❓ Show Help", key="show_voice_help")
+        
+        # Process voice command
+        if submit_voice and voice_input:
+            with st.spinner("Processing command..."):
+                result = self.voice_assistant.process_command(voice_input, self.get_user_id())
+                
+                if result.get("status") == "success":
+                    st.markdown(f'<div class="success-message">✅ {result.get("message", "")}</div>', unsafe_allow_html=True)
+                    
+                    # Handle navigation
+                    if result.get("action") in ["navigate_home", "navigate_analytics", "navigate_budgets", "navigate_expenses"]:
+                        if "analytics" in result.get("action").lower():
+                            st.session_state.page = "analytics"
+                        elif "budget" in result.get("action").lower():
+                            st.session_state.page = "budgets"
+                        elif "expense" in result.get("action").lower():
+                            st.session_state.page = "expenses"
+                        else:
+                            st.session_state.page = "home"
+                        st.rerun()
+                    
+                    # Display data if available
+                    if result.get("data"):
+                        with st.expander("📊 Result Details"):
+                            st.json(result.get("data"))
+                else:
+                    st.markdown(f'<div class="error-message">❌ {result.get("message", "Unknown error")}</div>', unsafe_allow_html=True)
+        
+        if show_help:
+            with st.expander("📚 Available Voice Commands", expanded=True):
+                st.markdown("""
+                ### 📝 Add Expenses
+                - "Add 500 for food"
+                - "Create expense of 1000 in education"
+                - "Log 250 rupees for transport"
+                
+                ### 📊 View Data
+                - "Show my expenses"
+                - "Show total spent"
+                - "Show analytics"
+                - "Display budget alerts"
+                
+                ### 🔍 Filter & Search
+                - "Show food expenses"
+                - "Filter by entertainment"
+                - "Transportation spending"
+                
+                ### 🧭 Navigate
+                - "Go to analytics"
+                - "Open expenses"
+                - "Navigate to budgets"
+                - "Show home"
+                
+                ### ℹ️ Help
+                - "Help"
+                - "Available commands"
+                - "What can you do"
+                """)
+    
+    def create_expense_manual(self):
+        """Manual expense creation form"""
+        st.subheader("➕ Add New Expense (Manual)")
+        
+        with st.form("expense_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                description = st.text_input("Expense Description", placeholder="e.g., Lunch at cafe")
+                amount = st.number_input("Amount (₹)", min_value=0.0, step=1.0)
+            
+            with col2:
+                category = st.selectbox(
+                    "Category",
+                    ["Food & Dining", "Transportation", "Entertainment", "Education", "Housing",
+                     "Utilities", "Shopping", "Healthcare", "Travel", "Other"]
+                )
+                priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+            
+            tags_input = st.text_input("Tags (comma-separated)", placeholder="e.g., restaurant, lunch")
+            notes = st.text_area("Notes", placeholder="Additional details")
+            
+            submit_button = st.form_submit_button("💾 Save Expense", use_container_width=True)
+            
+            if submit_button:
+                if not description or amount <= 0:
+                    st.error("Please fill in all required fields correctly")
+                else:
                     try:
+                        expense_data = {
+                            "description": description,
+                            "amount": float(amount),
+                            "category": category,
+                            "date": datetime.now().date().isoformat(),
+                            "priority": priority,
+                            "tags": [tag.strip() for tag in tags_input.split(",") if tag.strip()],
+                            "notes": notes if notes else None
+                        }
+                        
                         response = requests.post(
-                            f"{BACKEND_URL}/voice/execute-actions",
-                            json={
-                                "transcription": voice_input,
-                                "user_id": st.session_state.user_id
-                            }
+                            f"{self.backend_url}/expenses/?user_id={self.get_user_id()}",
+                            json=expense_data,
+                            timeout=10
                         )
                         
                         if response.status_code == 200:
-                            result = response.json()
-                            
-                            # Display transcription
-                            st.subheader("📝 Transcription:")
-                            st.write(f"**{result['transcription']}**")
-                            
-                            # Display actions
-                            if result.get('actions'):
-                                st.subheader("✅ Actions Executed:")
-                                for action in result['actions']:
-                                    status_emoji = "✅" if action['status'] == "success" else "❌" if action['status'] == "failed" else "⏳"
-                                    st.write(f"{status_emoji} **{action['type'].upper()}**: {action['summary']}")
-                            
-                            # Display confirmations
-                            if result.get('confirmations'):
-                                st.subheader("🔊 Tamil Confirmations:")
-                                for confirmation in result['confirmations']:
-                                    st.info(confirmation)
-                            
-                            # Play audio if available
-                            if result.get('tts_audio_base64'):
-                                try:
-                                    st.subheader("🔊 Audio Confirmation:")
-                                    audio_bytes = base64.b64decode(result['tts_audio_base64'])
-                                    st.audio(audio_bytes, format='audio/wav')
-                                except:
-                                    pass
-                            
-                            # Handle navigation
-                            if result.get('navigation'):
-                                st.success(f"🧭 Navigating to {result['navigation']}...")
-                                st.session_state.page = result['navigation']
-                                st.rerun()
+                            st.markdown(
+                                f'<div class="success-message">✅ Expense added successfully! ₹{amount} for {category}</div>',
+                                unsafe_allow_html=True
+                            )
+                            st.rerun()
                         else:
-                            st.error(f"Error: {response.text}")
-                    
+                            st.error(f"Failed to add expense: {response.text}")
                     except Exception as e:
-                        st.error(f"Error executing command: {str(e)}")
+                        st.error(f"Error adding expense: {str(e)}")
+    
+    def manage_expenses(self):
+        """Manage expenses page"""
+        st.subheader("📝 Manage Expenses")
+        
+        try:
+            response = requests.get(
+                f"{self.backend_url}/expenses/?user_id={self.get_user_id()}",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                expenses = response.json()
+                
+                # Add manual form
+                self.create_expense_manual()
+                
+                st.divider()
+                
+                if expenses:
+                    st.info(f"Total expenses: {len(expenses)}")
+                    
+                    # Filter options
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        filter_category = st.selectbox(
+                            "Filter by Category",
+                            ["All"] + list(set(e["category"] for e in expenses))
+                        )
+                    with col2:
+                        filter_priority = st.selectbox(
+                            "Filter by Priority",
+                            ["All", "High", "Medium", "Low"]
+                        )
+                    with col3:
+                        search_term = st.text_input("Search in description/tags")
+                    
+                    # Apply filters
+                    filtered = expenses
+                    if filter_category != "All":
+                        filtered = [e for e in filtered if e["category"] == filter_category]
+                    if filter_priority != "All":
+                        filtered = [e for e in filtered if e["priority"] == filter_priority]
+                    if search_term:
+                        filtered = [e for e in filtered if search_term.lower() in e["description"].lower()]
+                    
+                    # Display expenses
+                    for exp in filtered:
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        with col1:
+                            st.write(f"**{exp['description']}** - {exp['category']}")
+                        with col2:
+                            st.write(f"₹{exp['amount']:.2f}")
+                        with col3:
+                            st.write(f"🔴 {exp['priority']}")
+                        with col4:
+                            if st.button("🗑️", key=f"delete_{exp['id']}", help="Delete expense"):
+                                self.delete_expense(exp["id"])
+                else:
+                    st.info("No expenses found")
             else:
-                st.warning("Please enter a command")
+                st.error("Failed to fetch expenses")
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
     
-    with col2:
-        st.subheader("📊 Status")
-        st.markdown("""
-        **Status:** ✅ Active
+    def delete_expense(self, expense_id: str):
+        """Delete an expense"""
+        try:
+            response = requests.delete(
+                f"{self.backend_url}/expenses/{expense_id}?user_id={self.get_user_id()}",
+                timeout=10
+            )
+            if response.status_code == 200:
+                st.success("Expense deleted successfully!")
+                st.rerun()
+            else:
+                st.error("Failed to delete expense")
+        except Exception as e:
+            st.error(f"Error deleting expense: {str(e)}")
+    
+    def show_analytics_page(self):
+        """Show advanced analytics"""
+        st.subheader("📊 Advanced Analytics")
         
-        **Features:**
-        - 🎤 Speech Input
-        - 🗣️ Tamil Recognition
-        - 📝 Multi-action
-        - ✏️ CRUD Ops
-        - 🔊 TTS Audio
-        - 🧭 Navigation
+        try:
+            response = requests.get(
+                f"{self.backend_url}/analytics/?user_id={self.get_user_id()}",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                analytics = response.json()
+                
+                # Key metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Spent", f"₹{analytics['total_spent']:.2f}")
+                with col2:
+                    st.metric("Daily Average", f"₹{analytics['average_daily']:.2f}")
+                with col3:
+                    st.metric("Savings Rate", f"{analytics['savings_rate']:.1f}%")
+                with col4:
+                    st.metric("Spending Change", f"{analytics['spending_velocity']['change_percentage']:.1f}%")
+                
+                st.divider()
+                
+                # Category breakdown
+                if analytics["category_breakdown"]:
+                    st.subheading("💰 Category Breakdown")
+                    fig = px.pie(
+                        values=list(analytics["category_breakdown"].values()),
+                        names=list(analytics["category_breakdown"].keys()),
+                        title="Spending by Category"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Monthly trend
+                if analytics["monthly_trend"]:
+                    st.subheading("📈 Monthly Spending Trend")
+                    monthly_df = pd.DataFrame(analytics["monthly_trend"])
+                    fig = px.line(monthly_df, x="month", y="total", markers=True, title="Monthly Spending")
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Priority distribution
+                if analytics["priority_distribution"]:
+                    st.subheading("🎯 Priority Distribution")
+                    priority_df = pd.DataFrame([
+                        {"Priority": k, "Amount": v}
+                        for k, v in analytics["priority_distribution"].items()
+                    ])
+                    fig = px.bar(priority_df, x="Priority", y="Amount", title="Spending by Priority")
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.error("Failed to fetch analytics")
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+    
+    def show_budgets_page(self):
+        """Show budget alerts"""
+        st.subheader("💳 Budget Alerts & Monitoring")
         
-        **API:** Groq Whisper
-        """)
-
-# ============================================================================
-# PAGE: SETTINGS
-# ============================================================================
-
-def settings_page():
-    st.title("⚙️ Settings")
-    st.markdown("---")
+        try:
+            response = requests.get(
+                f"{self.backend_url}/budgets/alerts?user_id={self.get_user_id()}",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                alerts = response.json()
+                
+                if alerts:
+                    for alert in alerts:
+                        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                        
+                        with col1:
+                            st.write(f"**{alert['category']}**")
+                        with col2:
+                            st.write(f"₹{alert['spent']:.2f} / ₹{alert['budget']:.2f}")
+                        with col3:
+                            progress = alert["percentage"] / 100
+                            st.progress(progress)
+                        with col4:
+                            if alert["alert_level"] == "Critical":
+                                st.error(f"🔴 {alert['alert_level']}")
+                            elif alert["alert_level"] == "Warning":
+                                st.warning(f"🟠 {alert['alert_level']}")
+                            else:
+                                st.success(f"🟢 {alert['alert_level']}")
+                else:
+                    st.info("No budget alerts")
+            else:
+                st.error("Failed to fetch budget alerts")
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
     
-    st.subheader("Account Information")
-    st.write(f"**User ID:** `{st.session_state.user_id}`")
-    st.write(f"**Backend URL:** `{BACKEND_URL}`")
-    
-    st.markdown("---")
-    
-    st.subheader("🗑️ Danger Zone")
-    if st.button("Clear All Data (Requires Confirmation)", type="secondary"):
-        st.warning("This action cannot be undone!")
-        if st.button("Yes, delete all data", type="primary"):
-            st.info("Feature coming soon")
-
-# ============================================================================
-# MAIN APP
-# ============================================================================
+    def main(self):
+        """Main application"""
+        # Initialize session state
+        if "page" not in st.session_state:
+            st.session_state.page = "home"
+        if "user_id" not in st.session_state:
+            st.session_state.user_id = "default"
+        
+        # Sidebar
+        with st.sidebar:
+            st.title("🧭 Navigation")
+            
+            # User ID input
+            user_id = st.text_input("User ID", value=st.session_state.user_id)
+            if user_id:
+                st.session_state.user_id = user_id
+            
+            # Navigation
+            page = st.radio(
+                "Select Page",
+                ["🏠 Home", "📝 Manage Expenses", "📊 Analytics", "💳 Budget Alerts", "🎤 Voice Commands"],
+                key="page_radio"
+            )
+            
+            if page == "🏠 Home":
+                st.session_state.page = "home"
+            elif page == "📝 Manage Expenses":
+                st.session_state.page = "expenses"
+            elif page == "📊 Analytics":
+                st.session_state.page = "analytics"
+            elif page == "💳 Budget Alerts":
+                st.session_state.page = "budgets"
+            elif page == "🎤 Voice Commands":
+                st.session_state.page = "voice"
+        
+        # Main content
+        if st.session_state.page == "home":
+            st.markdown("---")
+            st.markdown("### 📊 Welcome to Enhanced Expense Tracker Pro")
+            st.info("🎤 Use voice commands or manual input to track your expenses. Navigate using the sidebar or voice assistant.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📝 Add Expense", use_container_width=True):
+                    st.session_state.page = "expenses"
+                    st.rerun()
+            with col2:
+                if st.button("📊 View Analytics", use_container_width=True):
+                    st.session_state.page = "analytics"
+                    st.rerun()
+            
+            self.show_voice_assistant_widget()
+        
+        elif st.session_state.page == "expenses":
+            self.manage_expenses()
+        
+        elif st.session_state.page == "analytics":
+            self.show_analytics_page()
+        
+        elif st.session_state.page == "budgets":
+            self.show_budgets_page()
+        
+        elif st.session_state.page == "voice":
+            st.subheader("🎤 Voice Assistant")
+            self.show_voice_assistant_widget()
 
 def main():
-    # Sidebar
-    with st.sidebar:
-        st.title("💰 Expense Tracker")
-        st.markdown("---")
-        
-        # Navigation
-        st.subheader("📍 Navigation")
-        pages = ["📊 Dashboard", "➕ Add Expense", "📋 View All", "📈 Analytics", "💰 Budget Manager", "🗣️ Voice Assistant", "⚙️ Settings"]
-        selected_page = st.radio("Go to:", pages, label_visibility="collapsed")
-        
-        st.markdown("---")
-        
-        # Quick Stats
-        expenses = get_expenses()
-        if expenses:
-            total = sum(float(e['amount']) for e in expenses)
-            st.metric("Total Expenses", f"₹{total:.2f}")
-            st.metric("Total Records", len(expenses))
-        
-        st.markdown("---")
-        st.caption("v3.0.0 with Voice Assistant")
-    
-    # Route to pages
-    if selected_page == "📊 Dashboard":
-        dashboard_page()
-    elif selected_page == "➕ Add Expense":
-        add_expense_page()
-    elif selected_page == "📋 View All":
-        view_all_page()
-    elif selected_page == "📈 Analytics":
-        analytics_page()
-    elif selected_page == "💰 Budget Manager":
-        budget_manager_page()
-    elif selected_page == "🗣️ Voice Assistant":
-        voice_assistant_page()
-    elif selected_page == "⚙️ Settings":
-        settings_page()
+    tracker = EnhancedExpenseTracker(BACKEND_URL)
+    tracker.main()
 
 if __name__ == "__main__":
     main()
