@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -8,11 +8,13 @@ import os
 import json
 import random
 import re
+import io
+import speech_recognition as sr
 
 app = FastAPI(
     title="Enhanced Expense Tracker API with Voice Assistant",
-    version="3.0.0",
-    description="A comprehensive expense tracking system with advanced analytics and voice control"
+    version="3.1.0",
+    description="A comprehensive expense tracking system with advanced analytics and voice control with audio intake"
 )
 
 # Add CORS middleware
@@ -409,12 +411,12 @@ def generate_sample_data():
 @app.get("/")
 def read_root():
     return {
-        "message": "Enhanced Expense Tracker API with Voice Assistant is running",
-        "version": "3.0.0",
+        "message": "Enhanced Expense Tracker API with Voice Assistant (Audio Intake)",
+        "version": "3.1.0",
         "database": "JSON File (Render Compatible)",
         "currency": "INR",
         "status": "healthy",
-        "voice_assistant": "Enabled"
+        "voice_assistant": "Enabled with Audio Intake"
     }
 
 @app.post("/expenses/", response_model=Expense)
@@ -747,7 +749,6 @@ def parse_voice_command(command: str) -> Dict[str, Any]:
     
     # CRUD Operations
     if any(word in command_lower for word in ["add", "create", "new", "log"]):
-        # Extract amount, category, description
         amount_match = re.search(r'(\d+(?:\.\d{2})?)', command_lower)
         amount = float(amount_match.group(1)) if amount_match else 0
         
@@ -817,19 +818,17 @@ def parse_voice_command(command: str) -> Dict[str, Any]:
     else:
         return {"action": "unknown", "intent": "unknown"}
 
-@app.post("/voice/process", response_model=VoiceResponse)
+@app.post("/voice/process")
 def process_voice_command(voice_cmd: VoiceCommand):
     """Process voice commands for expense management"""
     try:
         user_id = voice_cmd.user_id
         command = voice_cmd.command
         
-        # Parse the command
         parsed = parse_voice_command(command)
         action = parsed.get("action")
         intent = parsed.get("intent")
         
-        # CRUD Actions
         if action == "add_expense":
             amount = parsed.get("amount", 0)
             category = parsed.get("category", "Other")
@@ -985,6 +984,47 @@ def process_voice_command(voice_cmd: VoiceCommand):
             message=f"Error processing voice command: {str(e)}",
             action="error"
         )
+
+@app.post("/voice/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe audio file to text using SpeechRecognition"""
+    try:
+        # Read audio file
+        audio_data = await file.read()
+        
+        # Create recognizer
+        recognizer = sr.Recognizer()
+        
+        # Convert bytes to AudioData
+        audio_file = io.BytesIO(audio_data)
+        
+        try:
+            with sr.AudioFile(audio_file) as source:
+                audio = recognizer.record(source)
+            
+            # Try to transcribe with Google Speech Recognition
+            text = recognizer.recognize_google(audio)
+            
+            return {
+                "status": "success",
+                "transcribed_text": text,
+                "confidence": "high"
+            }
+        except sr.UnknownValueError:
+            return {
+                "status": "error",
+                "message": "Could not understand audio. Please speak clearly.",
+                "transcribed_text": None
+            }
+        except sr.RequestError as e:
+            return {
+                "status": "error",
+                "message": f"Speech recognition service error: {str(e)}",
+                "transcribed_text": None
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Audio processing error: {str(e)}")
 
 @app.get("/voice/commands")
 def get_voice_commands():

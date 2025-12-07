@@ -6,13 +6,14 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
 import os
+from streamlit_mic_recorder import mic_recorder
 
 # Configuration - Use environment variable for backend URL
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://expense-tracker-n6e8.onrender.com")
 CURRENCY = "₹"  # Indian Rupee
 
 class VoiceAssistant:
-    """Voice Assistant for Expense Tracker"""
+    """Voice Assistant for Expense Tracker with Audio Intake"""
     def __init__(self, backend_url):
         self.backend_url = backend_url
     
@@ -30,6 +31,22 @@ class VoiceAssistant:
                 "status": "error",
                 "message": f"Voice processing error: {str(e)}",
                 "action": "error"
+            }
+    
+    def transcribe_audio(self, audio_bytes, user_id: str = "default") -> dict:
+        """Transcribe audio file to text"""
+        try:
+            files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
+            response = requests.post(
+                f"{self.backend_url}/voice/transcribe",
+                files=files,
+                timeout=30
+            )
+            return response.json()
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Audio transcription error: {str(e)}"
             }
     
     def get_commands_help(self) -> dict:
@@ -161,59 +178,119 @@ class EnhancedExpenseTracker:
         </style>
         """, unsafe_allow_html=True)
         
-        st.markdown(f'<h1 class="title-text">💰 Enhanced Expense Tracker Pro with Voice</h1>', unsafe_allow_html=True)
+        st.markdown(f'<h1 class="title-text">💰 Enhanced Expense Tracker Pro with Voice Audio</h1>', unsafe_allow_html=True)
     
     def get_user_id(self) -> str:
         """Get current user ID"""
         return st.session_state.get("user_id", "default")
     
     def show_voice_assistant_widget(self):
-        """Display voice assistant widget and controls"""
+        """Display voice assistant widget with audio intake"""
         st.subheader("🎤 Voice Assistant Control Panel")
         
-        col1, col2, col3 = st.columns([2, 1, 1])
+        # Tabs for different input methods
+        tab1, tab2, tab3 = st.tabs(["🎙️ Voice Input", "📝 Text Input", "❓ Help"])
         
-        with col1:
-            voice_input = st.text_input(
-                "🗣️ Enter your command or voice text:",
-                placeholder="e.g., 'Add 500 for food' or 'Show my expenses'",
-                key="voice_command_input"
+        with tab1:
+            st.info("🎙️ Click the microphone button below to record your voice command")
+            
+            # Voice recording using streamlit-mic-recorder
+            audio = mic_recorder(
+                start_prompt="🎙️ Click to Start Recording",
+                stop_prompt="⏹️ Click to Stop Recording",
+                just_once=False,
+                use_container_width=True,
+                format="wav"
             )
-        
-        with col2:
-            submit_voice = st.button("📤 Process Command", key="submit_voice")
-        
-        with col3:
-            show_help = st.button("❓ Show Help", key="show_voice_help")
-        
-        # Process voice command
-        if submit_voice and voice_input:
-            with st.spinner("Processing command..."):
-                result = self.voice_assistant.process_command(voice_input, self.get_user_id())
+            
+            if audio:
+                st.success("✅ Audio recorded successfully!")
                 
-                if result.get("status") == "success":
-                    st.markdown(f'<div class="success-message">✅ {result.get("message", "")}</div>', unsafe_allow_html=True)
+                with st.spinner("Transcribing audio..."):
+                    # Transcribe audio
+                    transcription_result = self.voice_assistant.transcribe_audio(audio["bytes"], self.get_user_id())
                     
-                    # Handle navigation
-                    if result.get("action") in ["navigate_home", "navigate_analytics", "navigate_budgets", "navigate_expenses"]:
-                        if "analytics" in result.get("action").lower():
-                            st.session_state.page = "analytics"
-                        elif "budget" in result.get("action").lower():
-                            st.session_state.page = "budgets"
-                        elif "expense" in result.get("action").lower():
-                            st.session_state.page = "expenses"
-                        else:
-                            st.session_state.page = "home"
-                        st.rerun()
-                    
-                    # Display data if available
-                    if result.get("data"):
-                        with st.expander("📊 Result Details"):
-                            st.json(result.get("data"))
-                else:
-                    st.markdown(f'<div class="error-message">❌ {result.get("message", "Unknown error")}</div>', unsafe_allow_html=True)
+                    if transcription_result.get("status") == "success":
+                        transcribed_text = transcription_result.get("transcribed_text", "")
+                        st.markdown(f'<div class="success-message">📝 Transcribed: "{transcribed_text}"</div>', unsafe_allow_html=True)
+                        
+                        # Process the transcribed text
+                        with st.spinner("Processing command..."):
+                            result = self.voice_assistant.process_command(transcribed_text, self.get_user_id())
+                            
+                            if result.get("status") == "success":
+                                st.markdown(f'<div class="success-message">✅ {result.get("message", "")}</div>', unsafe_allow_html=True)
+                                
+                                # Handle navigation
+                                if result.get("action") in ["navigate_home", "navigate_analytics", "navigate_budgets", "navigate_expenses"]:
+                                    if "analytics" in result.get("action").lower():
+                                        st.session_state.page = "analytics"
+                                    elif "budget" in result.get("action").lower():
+                                        st.session_state.page = "budgets"
+                                    elif "expense" in result.get("action").lower():
+                                        st.session_state.page = "expenses"
+                                    else:
+                                        st.session_state.page = "home"
+                                    st.rerun()
+                                
+                                # Display data if available
+                                if result.get("data"):
+                                    with st.expander("📊 Result Details"):
+                                        st.json(result.get("data"))
+                            else:
+                                st.markdown(f'<div class="error-message">❌ {result.get("message", "Unknown error")}</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="error-message">❌ {transcription_result.get("message", "Transcription failed")}</div>', unsafe_allow_html=True)
         
-        if show_help:
+        with tab2:
+            st.info("📝 Type your voice command below")
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                voice_input = st.text_input(
+                    "🗣️ Enter your command:",
+                    placeholder="e.g., 'Add 500 for food' or 'Show my expenses'",
+                    key="voice_command_input"
+                )
+            
+            with col2:
+                submit_voice = st.button("📤 Process Command", key="submit_voice")
+            
+            with col3:
+                show_help = st.button("❓ Show Help", key="show_voice_help")
+            
+            # Process voice command
+            if submit_voice and voice_input:
+                with st.spinner("Processing command..."):
+                    result = self.voice_assistant.process_command(voice_input, self.get_user_id())
+                    
+                    if result.get("status") == "success":
+                        st.markdown(f'<div class="success-message">✅ {result.get("message", "")}</div>', unsafe_allow_html=True)
+                        
+                        # Handle navigation
+                        if result.get("action") in ["navigate_home", "navigate_analytics", "navigate_budgets", "navigate_expenses"]:
+                            if "analytics" in result.get("action").lower():
+                                st.session_state.page = "analytics"
+                            elif "budget" in result.get("action").lower():
+                                st.session_state.page = "budgets"
+                            elif "expense" in result.get("action").lower():
+                                st.session_state.page = "expenses"
+                            else:
+                                st.session_state.page = "home"
+                            st.rerun()
+                        
+                        # Display data if available
+                        if result.get("data"):
+                            with st.expander("📊 Result Details"):
+                                st.json(result.get("data"))
+                    else:
+                        st.markdown(f'<div class="error-message">❌ {result.get("message", "Unknown error")}</div>', unsafe_allow_html=True)
+            
+            if show_help:
+                st.info("Displaying help...")
+        
+        with tab3:
             with st.expander("📚 Available Voice Commands", expanded=True):
                 st.markdown("""
                 ### 📝 Add Expenses
@@ -240,8 +317,8 @@ class EnhancedExpenseTracker:
                 
                 ### ℹ️ Help
                 - "Help"
-                - "Available commands"
                 - "What can you do"
+                - "Available commands"
                 """)
     
     def create_expense_manual(self):
@@ -512,8 +589,8 @@ class EnhancedExpenseTracker:
         # Main content
         if st.session_state.page == "home":
             st.markdown("---")
-            st.markdown("### 📊 Welcome to Enhanced Expense Tracker Pro")
-            st.info("🎤 Use voice commands or manual input to track your expenses. Navigate using the sidebar or voice assistant.")
+            st.markdown("### 📊 Welcome to Enhanced Expense Tracker Pro with Voice Audio")
+            st.info("🎤 Use voice commands (speak or type) or manual input to track your expenses. Navigate using the sidebar or voice assistant.")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -537,7 +614,7 @@ class EnhancedExpenseTracker:
             self.show_budgets_page()
         
         elif st.session_state.page == "voice":
-            st.subheader("🎤 Voice Assistant")
+            st.subheader("🎤 Voice Assistant with Audio Intake")
             self.show_voice_assistant_widget()
 
 def main():
