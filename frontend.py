@@ -19,8 +19,8 @@ class EnhancedExpenseTracker:
     def setup_page(self):
         """Configure Streamlit page settings with enhanced styling"""
         st.set_page_config(
-            page_title="💰 Super Expense Tracker Pro - INR",
-            page_icon="💸",
+            page_title="Expense Analyser",
+            page_icon="",
             layout="wide",
             initial_sidebar_state="expanded"
         )
@@ -77,7 +77,7 @@ class EnhancedExpenseTracker:
         </style>
         """, unsafe_allow_html=True)
         
-        st.markdown(f'<h1 class="main-header">💸 Super Expense Tracker Pro - {CURRENCY}</h1>', unsafe_allow_html=True)
+        st.markdown(f'<h1 class="main-header">Expense Analyser - {CURRENCY}</h1>', unsafe_allow_html=True)
     
     def test_connection(self):
         """Test connection to backend with enhanced error handling"""
