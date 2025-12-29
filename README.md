@@ -13,18 +13,18 @@ A comprehensive expense tracking web application built for students and professi
      style="
        display: inline-flex;
        align-items: center;
-       gap: 10px;
-       padding: 14px 22px;
-       background-color: #2563EB;
+       gap: 8px;
+       padding: 12px 20px;
+       background-color: #2563eb;
        color: #ffffff;
        text-decoration: none;
-       font-weight: 600;
-       font-size: 16px;
-       border-radius: 10px;
-       box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35);
+       font-size: 15px;
+       font-weight: 500;
+       border-radius: 8px;
+       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu;
      ">
-    <span style="font-size:18px;">↗</span>
-    View Project
+    <span style="font-size:16px;">↗</span>
+    <span>View Project</span>
   </a>
 </p>
 
