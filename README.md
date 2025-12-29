@@ -1,4 +1,4 @@
-# 💸 Super Expense Tracker Pro - INR
+# EXPENSE TRACKER
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28.1-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://python.org/)
@@ -205,7 +205,9 @@ The application comes with sensible defaults for Indian users:
 - **Other**: ₹2,000
 
 ### Admin Access
-- **Admin Code**: `2139`
+- **Admin Code**: 🔒 *Restricted* —  
+  **[Contact Me](mailto:ajithramesh2020@gmail.com)** for access
+
 - Provides access to database download functionality
 - Used for password recovery
 
@@ -292,10 +294,6 @@ Please use the GitHub Issues section to:
 - Request new features with use cases
 - Suggest improvements to existing features
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ### Attribution
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
 - Frontend powered by [Streamlit](https://streamlit.io/)
@@ -307,4 +305,49 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Disclaimer**: This application is for educational and personal use. Always consult with financial professionals for important financial decisions. The developers are not responsible for any financial losses or decisions made using this tool.
 
 ---
-*Project Maintainer: [Your Name] • Last Updated: April 2024*
+
+<p align="center">
+ <!-- Contact & Immediate Reach -->
+<a href="mailto:ajithramesh2020@gmail.com">
+  <img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white"/>
+</a>
+
+<a href="tel:+919345264522">
+  <img src="https://img.shields.io/badge/Call%20Me-0A66C2?style=for-the-badge&logo=phone&logoColor=white"/>
+</a>
+
+<a href="https://wa.me/9345264522">
+  <img src="https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white"/>
+</a>
+
+<!-- Professional Identity -->
+<a href="https://www.linkedin.com/in/ajith-ramesh-data-analyst/">
+  <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white"/>
+</a>
+
+<a href="https://ajith-data-analyst.github.io/Portfolio/Ajith_R_Resume.pdf">
+  <img src="https://img.shields.io/badge/Resume-4CAF50?style=for-the-badge&logo=googledrive&logoColor=white"/>
+</a>
+
+<!-- Work Proof -->
+<a href="https://ajith-data-analyst.github.io/Portfolio/home.html">
+  <img src="https://img.shields.io/badge/Portfolio-FF6B6B?style=for-the-badge&logo=web&logoColor=white"/>
+</a>
+
+<a href="https://github.com/Ajith-data-analyst">
+  <img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"/>
+</a>
+</p>
+<div align="center">
+
+  
+<a href="https://github.com/Ajith-data-analyst/expense-tracker/blob/main/LICENSE.txt">
+  © 2025 Ajith Ramesh · MIT License
+</a>
+
+</div>
+
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=100&section=footer"/>
+</p>
