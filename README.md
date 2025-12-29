@@ -30,7 +30,7 @@ A comprehensive expense tracking web application built for students and professi
 - [🧪 API Documentation](#-api-documentation)
 - [📁 Project Structure](#-project-structure)
 - [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+
 
 ## ✨ Features
 
@@ -62,7 +62,7 @@ A comprehensive expense tracking web application built for students and professi
 
 ## 🖥️ Live Demo
 
-**View my live project**: [Expense Tracker Pro](https://your-render-url.onrender.com)
+**View my live project**: [Expense Tracker Pro](https://expense-tracker-analytics.streamlit.app/)
 
 *Note: The application may take a few seconds to spin up on the free Render tier.*
 
