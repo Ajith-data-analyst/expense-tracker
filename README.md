@@ -342,7 +342,7 @@ Please use the GitHub Issues section to:
 
   
 <a href="https://github.com/Ajith-data-analyst/expense-tracker/blob/main/LICENSE.txt">
-  © 2025 Ajith Ramesh · MIT License
+  © 2025 Expense Tracker· MIT License
 </a>
 
 </div>
