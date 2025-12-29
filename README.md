@@ -7,11 +7,11 @@
 A comprehensive expense tracking web application built for students and professionals to manage finances effectively. Features include real-time analytics, budget alerts, multi-user support, and detailed financial reporting - all optimized for the Indian economy (INR).
 
 <p align="center">
-  <a href="https://expense-tracker-pro-j4q7.onrender.com" target="_blank" rel="noopener noreferrer">
+  <a href="https://expense-tracker-analytics.streamlit.app/" target="_blank" rel="noopener noreferrer">
     <img
       src="https://img.shields.io/badge/VIEW%20MY%20LIVE%20PROJECT%20%7C%20DEMO-0A66C2?style=for-the-badge&logo=render&logoColor=white"
       alt="View My Live Expense Tracker Project (Live Demo)"
-      height="44"
+      height="55"
     />
   </a>
 </p>
