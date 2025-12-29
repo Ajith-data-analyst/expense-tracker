@@ -1,13 +1,21 @@
 # 💸 Super Expense Tracker Pro - INR
-
-<p align="center"> <a href="https://expense-tracker-pro-j4q7.onrender.com" target="_blank"> <img src="https://img.shields.io/badge/VIEW_MY_LIVE_PROJECT-000000?style=for-the-badge&logo=render&logoColor=white" alt="View My Live Project" height="40"> </a> </p>
-
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28.1-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://python.org/)
 [![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?logo=render&logoColor=white)](https://render.com/)
 
 A comprehensive expense tracking web application built for students and professionals to manage finances effectively. Features include real-time analytics, budget alerts, multi-user support, and detailed financial reporting - all optimized for the Indian economy (INR).
+
+<p align="center">
+  <a href="https://expense-tracker-pro-j4q7.onrender.com" target="_blank" rel="noopener noreferrer">
+    <img
+      src="https://img.shields.io/badge/VIEW%20MY%20LIVE%20PROJECT%20%7C%20DEMO-0A66C2?style=for-the-badge&logo=render&logoColor=white"
+      alt="View My Live Expense Tracker Project (Live Demo)"
+      height="44"
+    />
+  </a>
+</p>
+
 
 ## 📋 Table of Contents
 - [✨ Features](#-features)
